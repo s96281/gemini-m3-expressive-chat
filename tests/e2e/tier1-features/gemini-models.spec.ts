@@ -304,8 +304,7 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
     await expect(menu).toBeHidden();
 
     await page.locator('[data-testid="chat-input-textarea"]').fill('Next question');
-    await expect(page.locator('[data-testid="send-message-btn"]')).toBeEnabled();
-    await page.locator('[data-testid="send-message-btn"]').click();
+    await page.locator('[data-testid="chat-input-textarea"]').press('Enter');
     await expect(page.locator('[data-testid="message-item-assistant"]').nth(1)).toContainText('OK');
 
     expect(capturedBodies[1].generationConfig.thinkingConfig).toEqual({
@@ -532,5 +531,61 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
     ]);
     expect(capturedStreamBody.generationConfig.maxOutputTokens).toBe(65536);
     await expect.poll(() => embedCalled).toBe(true);
+  });
+
+  test('shows waiting animation before first token and renders mermaid diagram blocks', async ({
+    page,
+  }) => {
+    await page.route('**/v1beta/models**', async (route) => {
+      if (route.request().url().includes(':streamGenerateContent')) {
+        // Delay response slightly so we can observe the waiting animation before first token
+        await new Promise((r) => setTimeout(r, 600));
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: 'Flowchart:\n\n```mermaid\nflowchart LR\n  User --> Gemini\n```\n',
+                    },
+                  ],
+                },
+              },
+            ],
+          })}\n\n`,
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ models: [] }),
+      });
+    });
+
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    await page.locator('[data-testid="chat-input-textarea"]').fill('Draw a mermaid flowchart');
+    await page.locator('[data-testid="send-message-btn"]').click();
+
+    // Waiting animation appears before first token arrives
+    await expect(page.locator('[data-testid="streaming-waiting-indicator"]')).toBeVisible();
+
+    // Once response completes, waiting indicator disappears and mermaid SVG renders
+    await expect(page.locator('[data-testid="streaming-waiting-indicator"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="mermaid-block"]')).toBeVisible();
+    await expect(page.locator('[data-testid="mermaid-svg-container"] svg')).toBeVisible();
+
+    // Toggle to source code and back
+    await page.locator('[data-testid="mermaid-toggle-code-btn"]').click();
+    await expect(page.locator('[data-testid="mermaid-block"]')).toContainText('User --> Gemini');
   });
 });

@@ -198,8 +198,44 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           )}
 
+          {/* Waiting Animation before First Response Token */}
+          {!isUser &&
+            !message.error &&
+            !message.content &&
+            (isStreamingActive || message.isStreaming) && (
+              <div
+                data-testid="streaming-waiting-indicator"
+                role="status"
+                aria-label="Waiting for response"
+                className="flex items-center gap-2.5 py-1 text-on-surface-variant"
+              >
+                <div className="flex items-center gap-1">
+                  <span
+                    className="w-2 h-2 rounded-full bg-primary animate-bounce"
+                    style={{ animationDelay: '0ms' }}
+                  />
+                  <span
+                    className="w-2 h-2 rounded-full bg-primary animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="w-2 h-2 rounded-full bg-primary animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-outline animate-pulse">
+                  {message.reasoningContent ? 'Thinking...' : 'Generating response...'}
+                </span>
+              </div>
+            )}
+
           {/* Normal Text Display */}
-          {(!message.error || message.content || isUser) && (
+          {(!message.error || message.content || isUser) &&
+            !(
+              !isUser &&
+              !message.content &&
+              (isStreamingActive || message.isStreaming)
+            ) && (
             <div
               style={{ display: isEditing ? 'none' : 'block' }}
               className="font-sans text-sm sm:text-base selection:bg-primary-container selection:text-on-primary-container"

@@ -5,6 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { CodeBlock } from './CodeBlock';
 import { DataTable } from './DataTable';
+import { MermaidBlock } from './MermaidBlock';
 import { MarkdownErrorBoundary } from './MarkdownErrorBoundary';
 
 export interface MarkdownRendererProps {
@@ -137,6 +138,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 
               if (match || isMultiLine) {
                 const lang = match ? match[1] : '';
+                if (lang.toLowerCase() === 'mermaid') {
+                  return <MermaidBlock code={codeContent} isStreaming={isStreaming} />;
+                }
                 return <CodeBlock language={lang} code={codeContent} />;
               }
 
