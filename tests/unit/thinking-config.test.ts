@@ -78,4 +78,22 @@ describe('Model-aware Gemini thinkingConfig resolver', () => {
       includeThoughts: true,
     });
   });
+
+  it('uses thinkingLevel for Gemma series models', () => {
+    const gemmaCap = getGeminiThinkingCapability('gemma-4-31b-it');
+    expect(gemmaCap.mode).toBe('level');
+    expect(gemmaCap.supportedPresets).toEqual(['auto', 'minimal', 'low', 'medium', 'high']);
+
+    expect(buildGeminiThinkingConfig('gemma-4-31b-it', 'auto')).toEqual({
+      includeThoughts: true,
+    });
+    expect(buildGeminiThinkingConfig('gemma-4-31b-it', 'high')).toEqual({
+      thinkingLevel: 'high',
+      includeThoughts: true,
+    });
+    expect(buildGeminiThinkingConfig('gemma-4-31b-it', 'minimal')).toEqual({
+      thinkingLevel: 'minimal',
+      includeThoughts: true,
+    });
+  });
 });

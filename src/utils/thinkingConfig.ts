@@ -76,10 +76,10 @@ function normalizeModelId(modelIdOrName: string): string {
 }
 
 /**
- * Resolves the thinking capability of a Google Gemini model.
- * - Gemini 3.x uses `thinkingLevel` (`minimal` | `low` | `medium` | `high`)
+ * Resolves the thinking capability of a Google Gemini / Gemma model.
+ * - Gemini 3.x & Gemma series use `thinkingLevel` (`minimal` | `low` | `medium` | `high`)
  * - Gemini 2.5.x & 2.0-flash-thinking use `thinkingBudget` (numeric tokens)
- * - Gemini 1.5 / 2.0-flash (non-thinking) / Gemma do not support `thinkingConfig`
+ * - Gemini 1.5 / 2.0-flash (non-thinking) do not support `thinkingConfig`
  */
 export function getGeminiThinkingCapability(modelIdOrName: string): ThinkingCapability {
   const id = normalizeModelId(modelIdOrName);
@@ -94,6 +94,16 @@ export function getGeminiThinkingCapability(modelIdOrName: string): ThinkingCapa
         supportedPresets: ['auto', 'low', 'high'],
       };
     }
+    return {
+      mode: 'level',
+      canDisable: false,
+      allowedLevels: ['minimal', 'low', 'medium', 'high'],
+      supportedPresets: ['auto', 'minimal', 'low', 'medium', 'high'],
+    };
+  }
+
+  // Gemma series -> thinkingLevel
+  if (id.includes('gemma')) {
     return {
       mode: 'level',
       canDisable: false,
