@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-seed="ocean" data-mode="dark" data-theme="dark" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23A8C7FA'><path d='M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z'/></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Material 3 Expressive AI Chat Application (Gemini & ChatGPT Converged UX)" />
+    <title>Material 3 Expressive AI Chat</title>
+    <!-- Preconnect & Google Fonts for M3 Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script>
+      (function() {
+        try {
+          var mode = localStorage.getItem('m3_theme_mode') || localStorage.getItem('gemini_theme_mode') || 'system';
+          var seed = localStorage.getItem('m3_seed_color') || localStorage.getItem('gemini_theme_seed') || 'ocean';
+          var resolved = mode;
+          if (mode === 'system') {
+            resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          var root = document.documentElement;
+          root.setAttribute('data-seed', seed);
+          root.setAttribute('data-mode', resolved);
+          root.setAttribute('data-theme', resolved);
+          if (resolved === 'dark') {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+        } catch(e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-surface text-on-surface antialiased selection:bg-primary-container selection:text-on-primary-container overflow-hidden">
+    <div id="root" class="h-screen w-screen overflow-hidden flex flex-col"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

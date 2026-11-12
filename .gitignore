@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build
+dist/
+dist-ssr/
+
+# Environment and sensitive keys
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Test & coverage artifacts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# TypeScript build caches
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Environment system caches
+.agents
+.agents/
+.cache
+.cache/
+.config
+.config/
+.gemini
+.gemini/
+.local
+.local/
+.npm
+.npm/
+.bash_logout
+.bashrc
+.profile
+.gitconfig
+*.log
