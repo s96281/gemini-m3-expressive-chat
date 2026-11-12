@@ -204,4 +204,111 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
       { role: 'user', parts: [{ text: 'What is my name?' }] },
     ]);
   });
+
+  test('adapts ThinkingSelectorPill options and thinkingConfig payload per Gemini model generation', async ({
+    page,
+  }) => {
+    const capturedBodies: any[] = [];
+
+    await page.route('**/v1beta/models**', async (route) => {
+      if (route.request().url().includes(':streamGenerateContent')) {
+        capturedBodies.push(route.request().postDataJSON());
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({
+            candidates: [{ content: { parts: [{ text: 'OK' }] } }],
+          })}\n\n`,
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          models: [
+            {
+              name: 'models/gemini-1.5-flash',
+              displayName: 'Gemini 1.5 Flash',
+              description: 'Legacy non-thinking model',
+              supportedGenerationMethods: ['generateContent'],
+            },
+            {
+              name: 'models/gemini-2.5-pro',
+              displayName: 'Gemini 2.5 Pro',
+              description: '2.5 Pro with thinkingBudget',
+              supportedGenerationMethods: ['generateContent'],
+            },
+            {
+              name: 'models/gemini-3-pro-preview',
+              displayName: 'Gemini 3 Pro',
+              description: '3 Pro with thinkingLevel',
+              supportedGenerationMethods: ['generateContent'],
+            },
+          ],
+        }),
+      });
+    });
+
+    // Enable Gemini mode, fetch models, close settings
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await page.locator('[data-testid="fetch-gemini-models-btn"]').click();
+    await expect(page.locator('[data-testid="fetch-gemini-models-status"]')).toContainText(
+      'Fetched 3 Gemini models'
+    );
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    // 1. Default Gemini 1.5 Flash does not support thinking -> ThinkingSelectorPill hidden
+    await expect(page.locator('[data-testid="thinking-selector-pill"]')).toHaveCount(0);
+
+    // 2. Switch to Gemini 2.5 Pro -> ThinkingSelectorPill appears with thinkingBudget presets (no Off)
+    await page.locator('[data-testid="model-selector-pill"]').click();
+    await page
+      .locator('[data-testid="model-option"]')
+      .filter({ hasText: 'Gemini 2.5 Pro' })
+      .click();
+
+    const thinkingPill = page.locator('[data-testid="thinking-selector-pill"]');
+    await expect(thinkingPill).toBeVisible();
+    await thinkingPill.click();
+
+    const menu = page.locator('[data-testid="thinking-selector-menu"]');
+    await expect(menu).toContainText('thinkingBudget');
+    await expect(menu.locator('[data-testid="thinking-option-off"]')).toHaveCount(0);
+    await menu.locator('[data-testid="thinking-option-high"]').click();
+
+    await page.locator('[data-testid="chat-input-textarea"]').fill('Solve this');
+    await page.locator('[data-testid="send-message-btn"]').click();
+    await expect(page.locator('[data-testid="message-item-assistant"]').first()).toContainText('OK');
+
+    expect(capturedBodies[0].generationConfig.thinkingConfig).toEqual({
+      thinkingBudget: 32768,
+      includeThoughts: true,
+    });
+
+    // 3. Switch to Gemini 3 Pro -> ThinkingSelectorPill adapts to thinkingLevel (Auto, Low, High)
+    await page.locator('[data-testid="model-selector-pill"]').click();
+    await page
+      .locator('[data-testid="model-option"]')
+      .filter({ hasText: 'Gemini 3 Pro' })
+      .click();
+
+    await thinkingPill.click();
+    await expect(menu).toContainText('thinkingLevel');
+    await expect(menu.locator('[data-testid="thinking-option-medium"]')).toHaveCount(0);
+    await menu.locator('[data-testid="thinking-option-low"]').click();
+
+    await page.locator('[data-testid="chat-input-textarea"]').fill('Next question');
+    await page.locator('[data-testid="send-message-btn"]').click();
+    await expect(page.locator('[data-testid="message-item-assistant"]').nth(1)).toContainText('OK');
+
+    expect(capturedBodies[1].generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: 'low',
+      includeThoughts: true,
+    });
+  });
 });

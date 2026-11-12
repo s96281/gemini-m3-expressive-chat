@@ -5,6 +5,7 @@ import { Attachment } from '../../types/chat';
 import { AutoExpandingTextarea } from './AutoExpandingTextarea';
 import { MorphingSendStopButton } from './MorphingSendStopButton';
 import { ModelSelectorPill } from './ModelSelectorPill';
+import { ThinkingSelectorPill } from './ThinkingSelectorPill';
 import { AttachmentBar } from './AttachmentBar';
 import { VoiceInputButton } from './VoiceInputButton';
 
@@ -176,8 +177,9 @@ export const InputDock: React.FC<InputDockProps> = ({
           className="relative w-full rounded-[28px] bg-surface-container-high/90 backdrop-blur-xl border border-outline-variant/40 shadow-elevation-3 focus-within:ring-2 focus-within:ring-primary focus-within:border-transparent transition-all duration-200 flex flex-col p-2 sm:p-2.5"
         >
           {/* Top Chips Row: Attachments & Model Selector */}
-          <div className="flex items-center justify-between gap-2 px-1 pb-1">
+          <div className="flex items-center gap-2 px-1 pb-1 flex-wrap">
             <ModelSelectorPill />
+            <ThinkingSelectorPill />
           </div>
 
           {/* Attachment Preview Chips */}

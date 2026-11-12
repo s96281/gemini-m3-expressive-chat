@@ -1,5 +1,5 @@
 import { Attachment } from '../types/chat';
-import { EngineMode, SimulatedSpeed } from '../types/settings';
+import { EngineMode, SimulatedSpeed, ThinkingPreset } from '../types/settings';
 
 export interface StreamRequest {
   prompt: string;
@@ -10,6 +10,7 @@ export interface StreamRequest {
   temperature?: number;
   maxTokens?: number;
   simulatedSpeed?: SimulatedSpeed;
+  thinkingPreset?: ThinkingPreset;
   attachments?: Attachment[];
   apiKey?: string;
   apiEndpoint?: string;

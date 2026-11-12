@@ -26,10 +26,11 @@ import {
 import { useSettingsStore, PERSONA_PRESETS } from '../../store/useSettingsStore';
 import { useChatStore } from '../../store/useChatStore';
 import { useTheme } from '../../theme/ThemeProvider';
-import { EngineMode, SimulatedSpeed } from '../../types/settings';
+import { EngineMode, SimulatedSpeed, ThinkingPreset } from '../../types/settings';
 import { STORAGE_KEYS } from '../../utils/storage';
 import { getAIEngine } from '../../services/aiEngine';
 import { fetchGeminiModels } from '../../services/liveEngine';
+import { ALL_THINKING_PRESETS, THINKING_PRESET_META } from '../../utils/thinkingConfig';
 
 export interface SettingsDialogProps {
   isOpen: boolean;
@@ -66,6 +67,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     temperature,
     maxTokens,
     simulatedSpeed,
+    thinkingPreset = 'auto',
     activePersonaId,
     customSystemPrompt,
     fetchedGeminiModels = [],
@@ -76,6 +78,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     setTemperature,
     setMaxTokens,
     setSimulatedSpeed,
+    setThinkingPreset,
     setActivePersonaId,
     setCustomSystemPrompt,
     setFetchedGeminiModels,
@@ -514,6 +517,40 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                         }`}
                       >
                         {spd}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Thinking Intensity Selector */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="font-medium text-on-surface">
+                      Thinking Intensity
+                    </label>
+                    <span className="text-[11px] text-outline">
+                      Adapts to Gemini <code className="font-mono">thinkingBudget</code> /{' '}
+                      <code className="font-mono">thinkingLevel</code>
+                    </span>
+                  </div>
+                  <div
+                    data-testid="thinking-preset-select"
+                    className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 rounded-xl bg-surface-container-highest p-1"
+                  >
+                    {ALL_THINKING_PRESETS.map((preset: ThinkingPreset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        data-testid={`settings-thinking-option-${preset}`}
+                        onClick={() => setThinkingPreset(preset)}
+                        className={`py-1.5 px-2 text-xs font-medium rounded-lg transition-all ${
+                          thinkingPreset === preset
+                            ? 'bg-surface text-primary shadow-sm font-semibold'
+                            : 'text-on-surface-variant hover:text-on-surface'
+                        }`}
+                        title={THINKING_PRESET_META[preset].description}
+                      >
+                        {THINKING_PRESET_META[preset].shortLabel}
                       </button>
                     ))}
                   </div>

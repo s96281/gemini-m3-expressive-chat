@@ -123,9 +123,12 @@ export class SimulatedEngine implements AIEngine {
     request: StreamRequest,
     callbacks: StreamCallbacks
   ): Promise<StreamResult> {
-    const { prompt, personaName, simulatedSpeed = 'natural', signal } = request;
+    const { prompt, personaName, simulatedSpeed = 'natural', thinkingPreset = 'auto', signal } = request;
     const speed = simulatedSpeed;
-    const isReasoning = shouldTriggerReasoning(prompt);
+    const isReasoning =
+      thinkingPreset === 'off'
+        ? false
+        : thinkingPreset === 'high' || shouldTriggerReasoning(prompt);
 
     let accumulatedReasoning = '';
     let accumulatedContent = '';

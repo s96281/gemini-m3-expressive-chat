@@ -7,6 +7,7 @@ import {
 } from './aiEngine';
 import { GeminiModelInfo } from '../types/settings';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { buildGeminiThinkingConfig } from '../utils/thinkingConfig';
 
 interface RawGeminiModel {
   name: string;
@@ -198,6 +199,7 @@ export class GeminiEngine implements AIEngine {
       apiKey = '',
       apiEndpoint,
       systemPrompt,
+      thinkingPreset = 'auto',
     } = request;
 
     if (!apiKey) {
@@ -209,6 +211,7 @@ export class GeminiEngine implements AIEngine {
     const resolvedModelId = resolveGeminiModelId(model);
     const base = buildGeminiV1BetaBase(apiEndpoint);
     const endpoint = `${base}/models/${encodeURIComponent(resolvedModelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
+    const thinkingConfig = buildGeminiThinkingConfig(resolvedModelId, thinkingPreset);
 
     const priorContents = (request.history || [])
       .filter((h) => h.role !== 'system' && h.content && h.content.trim().length > 0)
@@ -235,6 +238,7 @@ export class GeminiEngine implements AIEngine {
       generationConfig: {
         temperature: temperature ?? 0.7,
         maxOutputTokens: maxTokens ?? 2048,
+        ...(thinkingConfig ? { thinkingConfig } : {}),
       },
     };
 

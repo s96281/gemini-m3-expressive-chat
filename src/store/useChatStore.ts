@@ -125,6 +125,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           temperature: settings.temperature,
           maxTokens: settings.maxTokens,
           simulatedSpeed: settings.simulatedSpeed,
+          thinkingPreset: settings.thinkingPreset || 'auto',
           signal,
           ...(settings.engineMode !== 'simulated'
             ? {

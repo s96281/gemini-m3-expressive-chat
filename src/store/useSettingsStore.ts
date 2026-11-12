@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { AppSettings, EngineMode, GeminiModelInfo, Persona, SimulatedSpeed } from '../types/settings';
+import {
+  AppSettings,
+  EngineMode,
+  GeminiModelInfo,
+  Persona,
+  SimulatedSpeed,
+  ThinkingPreset,
+} from '../types/settings';
 import { STORAGE_KEYS } from '../utils/storage';
 
 export const PERSONA_PRESETS: Persona[] = [
@@ -56,6 +63,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   temperature: 0.7,
   maxTokens: 2048,
   simulatedSpeed: 'natural',
+  thinkingPreset: 'auto',
   activePersonaId: 'architect',
   customSystemPrompt: '',
   fetchedGeminiModels: [],
@@ -70,6 +78,7 @@ export interface SettingsState extends AppSettings {
   setTemperature: (temperature: number) => void;
   setMaxTokens: (maxTokens: number) => void;
   setSimulatedSpeed: (speed: SimulatedSpeed) => void;
+  setThinkingPreset: (preset: ThinkingPreset) => void;
   setActivePersonaId: (id: string) => void;
   setCustomSystemPrompt: (prompt: string) => void;
   setFetchedGeminiModels: (models: GeminiModelInfo[]) => void;
@@ -98,6 +107,7 @@ function loadInitialSettings(): AppSettings {
       temperature: typeof data.temperature === 'number' ? data.temperature : DEFAULT_SETTINGS.temperature,
       maxTokens: typeof data.maxTokens === 'number' ? data.maxTokens : DEFAULT_SETTINGS.maxTokens,
       simulatedSpeed: data.simulatedSpeed || DEFAULT_SETTINGS.simulatedSpeed,
+      thinkingPreset: data.thinkingPreset || DEFAULT_SETTINGS.thinkingPreset,
       activePersonaId: data.activePersonaId || DEFAULT_SETTINGS.activePersonaId,
       customSystemPrompt: data.customSystemPrompt ?? DEFAULT_SETTINGS.customSystemPrompt,
       fetchedGeminiModels: Array.isArray(data.fetchedGeminiModels)
@@ -124,6 +134,7 @@ function persistSettings(state: AppSettings): void {
       temperature: state.temperature,
       maxTokens: state.maxTokens,
       simulatedSpeed: state.simulatedSpeed,
+      thinkingPreset: state.thinkingPreset,
       activePersonaId: state.activePersonaId,
       customSystemPrompt: state.customSystemPrompt,
       fetchedGeminiModels: state.fetchedGeminiModels,
@@ -156,6 +167,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     setTemperature: (temperature) => sync(() => ({ temperature })),
     setMaxTokens: (maxTokens) => sync(() => ({ maxTokens })),
     setSimulatedSpeed: (simulatedSpeed) => sync(() => ({ simulatedSpeed })),
+    setThinkingPreset: (thinkingPreset) => sync(() => ({ thinkingPreset })),
     setActivePersonaId: (activePersonaId) => sync(() => ({ activePersonaId })),
     setCustomSystemPrompt: (customSystemPrompt) => sync(() => ({ customSystemPrompt })),
 
@@ -192,6 +204,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
         temperature: DEFAULT_SETTINGS.temperature,
         maxTokens: DEFAULT_SETTINGS.maxTokens,
         simulatedSpeed: DEFAULT_SETTINGS.simulatedSpeed,
+        thinkingPreset: DEFAULT_SETTINGS.thinkingPreset,
       })),
 
     resetPersona: () =>

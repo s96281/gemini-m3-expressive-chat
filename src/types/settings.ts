@@ -1,5 +1,6 @@
 export type EngineMode = 'simulated' | 'gemini' | 'openai' | 'ollama';
 export type SimulatedSpeed = 'fast' | 'natural' | 'relaxed';
+export type ThinkingPreset = 'auto' | 'off' | 'minimal' | 'low' | 'medium' | 'high';
 
 export interface Persona {
   id: string;
@@ -27,6 +28,7 @@ export interface AppSettings {
   temperature: number;
   maxTokens: number;
   simulatedSpeed: SimulatedSpeed;
+  thinkingPreset?: ThinkingPreset;
   activePersonaId: string;
   customSystemPrompt: string;
   fetchedGeminiModels?: GeminiModelInfo[];
