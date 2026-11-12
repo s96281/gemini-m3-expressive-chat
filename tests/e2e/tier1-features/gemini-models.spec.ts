@@ -372,4 +372,61 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
     );
     await expect(page.locator('[data-testid="message-error-banner"]')).toHaveCount(0);
   });
+
+  test('reads attached file content and sends it to the Gemini API', async ({ page }) => {
+    let capturedBody: any = null;
+
+    await page.route('**/v1beta/models**', async (route) => {
+      if (route.request().url().includes(':streamGenerateContent')) {
+        capturedBody = route.request().postDataJSON();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({
+            candidates: [{ content: { parts: [{ text: 'File content received: ALPHA-77' }] } }],
+          })}\n\n`,
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ models: [] }),
+      });
+    });
+
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    // Attach a text file via the hidden file input
+    const fileInput = page.locator('[data-testid="input-dock"] input[type="file"]');
+    await fileInput.setInputFiles({
+      name: 'report.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Project code: ALPHA-77'),
+    });
+
+    await expect(page.locator('[data-testid="attachment-chip"]')).toContainText('report.txt');
+
+    await page.locator('[data-testid="chat-input-textarea"]').fill('What is the project code?');
+    await page.locator('[data-testid="send-message-btn"]').click();
+
+    await expect(page.locator('[data-testid="message-item-assistant"]').first()).toContainText(
+      'File content received: ALPHA-77'
+    );
+
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody.contents[0].parts).toEqual([
+      {
+        text: '[Attached File: report.txt (text/plain)]\n```\nProject code: ALPHA-77\n```',
+      },
+      {
+        text: 'What is the project code?',
+      },
+    ]);
+  });
 });

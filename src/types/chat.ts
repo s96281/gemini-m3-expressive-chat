@@ -6,6 +6,8 @@ export interface Attachment {
   size: number;
   type: string;
   url: string; // base64 or object URL
+  textContent?: string;
+  dataBase64?: string;
 }
 
 export interface MessageNode {

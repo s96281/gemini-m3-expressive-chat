@@ -175,7 +175,7 @@ export function sanitizeFilename(title: string): string {
 export function buildConversationHistory(
   session: ChatSession | undefined,
   assistantNodeId: string
-): { role: 'user' | 'assistant'; content: string }[] {
+): { role: 'user' | 'assistant'; content: string; attachments?: MessageNode['attachments'] }[] {
   if (!session) return [];
   const assistantNode = session.messages[assistantNodeId];
   if (!assistantNode || !assistantNode.parentId) return [];
@@ -183,22 +183,28 @@ export function buildConversationHistory(
   const currentUserNode = session.messages[assistantNode.parentId];
   if (!currentUserNode || !currentUserNode.parentId) return [];
 
-  const history: { role: 'user' | 'assistant'; content: string }[] = [];
+  const history: {
+    role: 'user' | 'assistant';
+    content: string;
+    attachments?: MessageNode['attachments'];
+  }[] = [];
   const visited = new Set<string>();
   let currentId: string | null = currentUserNode.parentId;
 
   while (currentId && session.messages[currentId] && !visited.has(currentId)) {
     visited.add(currentId);
     const node: MessageNode = session.messages[currentId];
+    const hasText = Boolean(node.content && node.content.trim());
+    const hasAttachments = Boolean(node.attachments && node.attachments.length > 0);
     if (
       !node.error &&
-      node.content &&
-      node.content.trim() &&
+      (hasText || hasAttachments) &&
       (node.role === 'user' || node.role === 'assistant')
     ) {
       history.unshift({
         role: node.role,
         content: node.content,
+        ...(hasAttachments ? { attachments: node.attachments } : {}),
       });
     }
     currentId = node.parentId;

@@ -8,6 +8,7 @@ import { ModelSelectorPill } from './ModelSelectorPill';
 import { ThinkingSelectorPill } from './ThinkingSelectorPill';
 import { AttachmentBar } from './AttachmentBar';
 import { VoiceInputButton } from './VoiceInputButton';
+import { readAttachmentFile } from '../../utils/attachmentUtils';
 
 export interface InputDockProps {
   inputPrompt?: string;
@@ -88,27 +89,24 @@ export const InputDock: React.FC<InputDockProps> = ({
     };
   }, []);
 
-  const handleFiles = (fileList: FileList) => {
+  const handleFiles = async (fileList: FileList) => {
+    const validFiles: File[] = [];
     Array.from(fileList).forEach((file) => {
       if (file.size > MAX_FILE_SIZE) {
         showSnackbar(`"${file.name}" exceeds the 10MB size limit.`);
         return;
       }
-
-      const id = `att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      const url = URL.createObjectURL(file);
-
-      setAttachments((prev) => [
-        ...prev,
-        {
-          id,
-          name: file.name,
-          size: file.size,
-          type: file.type || 'application/octet-stream',
-          url,
-        },
-      ]);
+      validFiles.push(file);
     });
+
+    if (validFiles.length === 0) return;
+
+    try {
+      const readResults = await Promise.all(validFiles.map((file) => readAttachmentFile(file)));
+      setAttachments((prev) => [...prev, ...readResults]);
+    } catch {
+      showSnackbar('Failed to read one or more attached files.');
+    }
   };
 
   const showSnackbar = (msg: string) => {

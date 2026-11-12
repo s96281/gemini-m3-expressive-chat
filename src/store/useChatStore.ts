@@ -138,6 +138,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     const session = get().sessions.find((s) => s.id === sessionId);
     const model = session?.model || 'Gemini 1.5 Flash';
     const history = buildConversationHistory(session, assistantNodeId);
+    const assistantNode = session?.messages[assistantNodeId];
+    const parentUserNode =
+      assistantNode?.parentId ? session?.messages[assistantNode.parentId] : undefined;
+    const attachments = parentUserNode?.attachments;
 
     const settings = useSettingsStore.getState();
     const activePersona = settings.getActivePersona();
@@ -158,6 +162,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           maxTokens: settings.maxTokens,
           simulatedSpeed: settings.simulatedSpeed,
           thinkingPreset: settings.thinkingPreset || 'auto',
+          attachments,
           signal,
           ...(settings.engineMode !== 'simulated'
             ? {
@@ -700,7 +705,8 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     sendChatMessage: async (prompt: string, attachments?: Attachment[]) => {
       const trimmed = prompt.trim();
-      if (!trimmed) return;
+      const hasAttachments = Boolean(attachments && attachments.length > 0);
+      if (!trimmed && !hasAttachments) return;
 
       // Halt active streaming if any
       const { isStreaming, abortController } = get();

@@ -3,7 +3,7 @@ import { EngineMode, SimulatedSpeed, ThinkingPreset } from '../types/settings';
 
 export interface StreamRequest {
   prompt: string;
-  history?: { role: 'user' | 'assistant' | 'system'; content: string }[];
+  history?: { role: 'user' | 'assistant' | 'system'; content: string; attachments?: Attachment[] }[];
   systemPrompt?: string;
   personaName?: string;
   model?: string;

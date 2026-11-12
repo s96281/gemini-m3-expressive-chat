@@ -5,9 +5,80 @@ import {
   StreamRequest,
   StreamResult,
 } from './aiEngine';
+import { Attachment } from '../types/chat';
 import { GeminiModelInfo } from '../types/settings';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { buildGeminiThinkingConfig } from '../utils/thinkingConfig';
+
+type GeminiPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
+export function buildGeminiParts(text: string, attachments?: Attachment[]): GeminiPart[] {
+  const parts: GeminiPart[] = [];
+
+  if (attachments && attachments.length > 0) {
+    for (const att of attachments) {
+      if (att.textContent !== undefined) {
+        parts.push({
+          text: `[Attached File: ${att.name} (${att.type})]\n\`\`\`\n${att.textContent}\n\`\`\``,
+        });
+      } else if (att.dataBase64) {
+        parts.push({
+          inlineData: {
+            mimeType: att.type || 'application/octet-stream',
+            data: att.dataBase64,
+          },
+        });
+      }
+    }
+  }
+
+  if (text && text.trim()) {
+    parts.push({ text });
+  } else if (parts.length === 0) {
+    parts.push({ text: '' });
+  }
+
+  return parts;
+}
+
+export function buildOpenAIMessageContent(
+  text: string,
+  attachments?: Attachment[]
+): string | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> {
+  if (!attachments || attachments.length === 0) {
+    return text;
+  }
+
+  const textChunks: string[] = [];
+  const imageParts: Array<{ type: 'image_url'; image_url: { url: string } }> = [];
+
+  for (const att of attachments) {
+    if (att.textContent !== undefined) {
+      textChunks.push(`[Attached File: ${att.name} (${att.type})]\n\`\`\`\n${att.textContent}\n\`\`\``);
+    } else if (att.type.startsWith('image/') && att.dataBase64) {
+      imageParts.push({
+        type: 'image_url',
+        image_url: { url: `data:${att.type};base64,${att.dataBase64}` },
+      });
+    }
+  }
+
+  if (text && text.trim()) {
+    textChunks.push(text);
+  }
+
+  const combinedText = textChunks.join('\n\n');
+  if (imageParts.length === 0) {
+    return combinedText;
+  }
+
+  return [
+    ...(combinedText ? [{ type: 'text' as const, text: combinedText }] : []),
+    ...imageParts,
+  ];
+}
 
 interface RawGeminiModel {
   name: string;
@@ -214,10 +285,18 @@ export class GeminiEngine implements AIEngine {
     const thinkingConfig = buildGeminiThinkingConfig(resolvedModelId, thinkingPreset);
 
     const priorContents = (request.history || [])
-      .filter((h) => h.role !== 'system' && h.content && h.content.trim().length > 0)
+      .filter(
+        (h) =>
+          h.role !== 'system' &&
+          ((h.content && h.content.trim().length > 0) ||
+            (h.attachments && h.attachments.length > 0))
+      )
       .map((h) => ({
         role: h.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: h.content }],
+        parts:
+          h.role === 'user'
+            ? buildGeminiParts(h.content, h.attachments)
+            : [{ text: h.content }],
       }));
 
     const body = {
@@ -232,7 +311,7 @@ export class GeminiEngine implements AIEngine {
         ...priorContents,
         {
           role: 'user',
-          parts: [{ text: prompt }],
+          parts: buildGeminiParts(prompt, request.attachments),
         },
       ],
       generationConfig: {
@@ -368,8 +447,14 @@ export class OpenAIEngine implements AIEngine {
 
     const messages = [
       ...(request.systemPrompt ? [{ role: 'system', content: request.systemPrompt }] : []),
-      ...(request.history || []),
-      { role: 'user', content: prompt },
+      ...(request.history || []).map((h) => ({
+        role: h.role,
+        content:
+          h.role === 'user'
+            ? buildOpenAIMessageContent(h.content, h.attachments)
+            : h.content,
+      })),
+      { role: 'user', content: buildOpenAIMessageContent(prompt, request.attachments) },
     ];
 
     try {
