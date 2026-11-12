@@ -1,5 +1,10 @@
 import { Attachment } from '../types/chat';
-import { EngineMode, SimulatedSpeed, ThinkingPreset } from '../types/settings';
+import {
+  EngineMode,
+  GeminiToolsConfig,
+  SimulatedSpeed,
+  ThinkingPreset,
+} from '../types/settings';
 
 export interface StreamRequest {
   prompt: string;
@@ -11,6 +16,7 @@ export interface StreamRequest {
   maxTokens?: number;
   simulatedSpeed?: SimulatedSpeed;
   thinkingPreset?: ThinkingPreset;
+  geminiTools?: GeminiToolsConfig;
   attachments?: Attachment[];
   apiKey?: string;
   apiEndpoint?: string;

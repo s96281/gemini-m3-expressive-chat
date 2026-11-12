@@ -6,6 +6,7 @@ import { AutoExpandingTextarea } from './AutoExpandingTextarea';
 import { MorphingSendStopButton } from './MorphingSendStopButton';
 import { ModelSelectorPill } from './ModelSelectorPill';
 import { ThinkingSelectorPill } from './ThinkingSelectorPill';
+import { ToolsSelectorPill } from './ToolsSelectorPill';
 import { AttachmentBar } from './AttachmentBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { readAttachmentFile } from '../../utils/attachmentUtils';
@@ -178,6 +179,7 @@ export const InputDock: React.FC<InputDockProps> = ({
           <div className="flex items-center gap-2 px-1 pb-1 flex-wrap">
             <ModelSelectorPill />
             <ThinkingSelectorPill />
+            <ToolsSelectorPill />
           </div>
 
           {/* Attachment Preview Chips */}

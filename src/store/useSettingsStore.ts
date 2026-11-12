@@ -3,9 +3,11 @@ import {
   AppSettings,
   EngineMode,
   GeminiModelInfo,
+  GeminiToolsConfig,
   Persona,
   SimulatedSpeed,
   ThinkingPreset,
+  TitleEmbeddingModel,
 } from '../types/settings';
 import { STORAGE_KEYS } from '../utils/storage';
 
@@ -64,6 +66,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxTokens: 2048,
   simulatedSpeed: 'natural',
   thinkingPreset: 'auto',
+  geminiTools: {
+    googleSearch: false,
+    codeExecution: false,
+    urlContext: false,
+  },
+  titleEmbeddingModel: 'gemini-embedding-2',
   activePersonaId: 'architect',
   customSystemPrompt: '',
   fetchedGeminiModels: [],
@@ -79,6 +87,9 @@ export interface SettingsState extends AppSettings {
   setMaxTokens: (maxTokens: number) => void;
   setSimulatedSpeed: (speed: SimulatedSpeed) => void;
   setThinkingPreset: (preset: ThinkingPreset) => void;
+  setGeminiTools: (tools: GeminiToolsConfig) => void;
+  toggleGeminiTool: (tool: keyof GeminiToolsConfig) => void;
+  setTitleEmbeddingModel: (model: TitleEmbeddingModel) => void;
   setActivePersonaId: (id: string) => void;
   setCustomSystemPrompt: (prompt: string) => void;
   setFetchedGeminiModels: (models: GeminiModelInfo[]) => void;
@@ -108,6 +119,11 @@ function loadInitialSettings(): AppSettings {
       maxTokens: typeof data.maxTokens === 'number' ? data.maxTokens : DEFAULT_SETTINGS.maxTokens,
       simulatedSpeed: data.simulatedSpeed || DEFAULT_SETTINGS.simulatedSpeed,
       thinkingPreset: data.thinkingPreset || DEFAULT_SETTINGS.thinkingPreset,
+      geminiTools: {
+        ...DEFAULT_SETTINGS.geminiTools!,
+        ...(data.geminiTools && typeof data.geminiTools === 'object' ? data.geminiTools : {}),
+      },
+      titleEmbeddingModel: data.titleEmbeddingModel || DEFAULT_SETTINGS.titleEmbeddingModel,
       activePersonaId: data.activePersonaId || DEFAULT_SETTINGS.activePersonaId,
       customSystemPrompt: data.customSystemPrompt ?? DEFAULT_SETTINGS.customSystemPrompt,
       fetchedGeminiModels: Array.isArray(data.fetchedGeminiModels)
@@ -135,6 +151,8 @@ function persistSettings(state: AppSettings): void {
       maxTokens: state.maxTokens,
       simulatedSpeed: state.simulatedSpeed,
       thinkingPreset: state.thinkingPreset,
+      geminiTools: state.geminiTools,
+      titleEmbeddingModel: state.titleEmbeddingModel,
       activePersonaId: state.activePersonaId,
       customSystemPrompt: state.customSystemPrompt,
       fetchedGeminiModels: state.fetchedGeminiModels,
@@ -168,6 +186,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     setMaxTokens: (maxTokens) => sync(() => ({ maxTokens })),
     setSimulatedSpeed: (simulatedSpeed) => sync(() => ({ simulatedSpeed })),
     setThinkingPreset: (thinkingPreset) => sync(() => ({ thinkingPreset })),
+    setGeminiTools: (geminiTools) => sync(() => ({ geminiTools })),
+    toggleGeminiTool: (tool) =>
+      sync((prev) => {
+        const current = prev.geminiTools || DEFAULT_SETTINGS.geminiTools!;
+        return {
+          geminiTools: {
+            ...current,
+            [tool]: !current[tool],
+          },
+        };
+      }),
+    setTitleEmbeddingModel: (titleEmbeddingModel) => sync(() => ({ titleEmbeddingModel })),
     setActivePersonaId: (activePersonaId) => sync(() => ({ activePersonaId })),
     setCustomSystemPrompt: (customSystemPrompt) => sync(() => ({ customSystemPrompt })),
 

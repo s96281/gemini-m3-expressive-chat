@@ -29,9 +29,16 @@ export const AttachmentBar: React.FC<AttachmentBarProps> = ({
           <div
             key={att.id}
             data-testid="attachment-chip"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-xs text-on-surface border border-outline-variant/30 shadow-xs max-w-[200px]"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-xs text-on-surface border border-outline-variant/30 shadow-xs max-w-[220px]"
           >
-            {isImg ? (
+            {isImg && att.url ? (
+              <img
+                src={att.url}
+                alt={att.name}
+                data-testid="attachment-image-thumb"
+                className="w-6 h-6 rounded-md object-cover shrink-0 border border-outline-variant/30"
+              />
+            ) : isImg ? (
               <ImageIcon className="w-3.5 h-3.5 text-primary shrink-0" />
             ) : (
               <FileText className="w-3.5 h-3.5 text-primary shrink-0" />

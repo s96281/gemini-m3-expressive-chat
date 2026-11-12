@@ -301,8 +301,10 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
     await expect(menu).toContainText('thinkingLevel');
     await expect(menu.locator('[data-testid="thinking-option-medium"]')).toHaveCount(0);
     await menu.locator('[data-testid="thinking-option-low"]').click();
+    await expect(menu).toBeHidden();
 
     await page.locator('[data-testid="chat-input-textarea"]').fill('Next question');
+    await expect(page.locator('[data-testid="send-message-btn"]')).toBeEnabled();
     await page.locator('[data-testid="send-message-btn"]').click();
     await expect(page.locator('[data-testid="message-item-assistant"]').nth(1)).toContainText('OK');
 
@@ -428,5 +430,107 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
         text: 'What is the project code?',
       },
     ]);
+  });
+
+  test('supports 65536 max output tokens, Gemini tools toggles, image preview lightbox, and embedding title generation', async ({
+    page,
+  }) => {
+    let capturedStreamBody: any = null;
+    let embedCalled = false;
+
+    await page.route('**/v1beta/models**', async (route) => {
+      const url = route.request().url();
+      if (url.includes(':batchEmbedContents')) {
+        embedCalled = true;
+        const reqBody = route.request().postDataJSON();
+        const embeddings = reqBody.requests.map((_: unknown, idx: number) => ({
+          values: idx === 0 ? [1, 0] : idx === 1 ? [0.99, 0.05] : [0, 1],
+        }));
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ embeddings }),
+        });
+        return;
+      }
+
+      if (url.includes(':streamGenerateContent')) {
+        capturedStreamBody = route.request().postDataJSON();
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({
+            candidates: [{ content: { parts: [{ text: 'Image & tools processed!' }] } }],
+          })}\n\n`,
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ models: [] }),
+      });
+    });
+
+    // 1. Verify Max Output Tokens slider supports 65536 and enable Gemini mode
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    const maxTokensSlider = page.locator('[data-testid="max-tokens-slider"]');
+    await expect(maxTokensSlider).toHaveAttribute('max', '65536');
+    await maxTokensSlider.fill('65536');
+    await expect(page.locator('[data-testid="max-tokens-value"]')).toContainText('65536');
+
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await expect(page.locator('[data-testid="title-embedding-model-select"]')).toHaveValue(
+      'gemini-embedding-2'
+    );
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    // 2. Toggle Google Search & Code Execution tools via ToolsSelectorPill
+    await page.locator('[data-testid="tools-selector-pill"]').click();
+    await page.locator('[data-testid="tool-toggle-googleSearch"]').click();
+    await page.locator('[data-testid="tool-toggle-codeExecution"]').click();
+    await expect(page.locator('[data-testid="tools-selector-pill"]')).toContainText('Tools (2)');
+    // Close tools menu by clicking textarea
+    await page.locator('[data-testid="chat-input-textarea"]').click();
+
+    // 3. Upload an image and verify thumbnail in AttachmentBar
+    const png1x1 = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64'
+    );
+    const fileInput = page.locator('[data-testid="input-dock"] input[type="file"]');
+    await fileInput.setInputFiles({
+      name: 'sample.png',
+      mimeType: 'image/png',
+      buffer: png1x1,
+    });
+
+    await expect(page.locator('[data-testid="attachment-image-thumb"]')).toBeVisible();
+
+    // 4. Send message and verify image preview + lightbox in conversation
+    await page.locator('[data-testid="chat-input-textarea"]').fill('Analyze this image');
+    await page.locator('[data-testid="send-message-btn"]').click();
+
+    await expect(page.locator('[data-testid="message-item-assistant"]').first()).toContainText(
+      'Image & tools processed!'
+    );
+
+    const msgImgPreview = page.locator('[data-testid="message-image-preview"]').first();
+    await expect(msgImgPreview).toBeVisible();
+    await msgImgPreview.click();
+    await expect(page.locator('[data-testid="image-lightbox-modal"]')).toBeVisible();
+    await page.locator('[data-testid="close-image-lightbox-btn"]').click();
+    await expect(page.locator('[data-testid="image-lightbox-modal"]')).toHaveCount(0);
+
+    // 5. Verify tools, maxOutputTokens=65536, and embedding title call
+    expect(capturedStreamBody.tools).toEqual([
+      { google_search: {} },
+      { code_execution: {} },
+    ]);
+    expect(capturedStreamBody.generationConfig.maxOutputTokens).toBe(65536);
+    await expect.poll(() => embedCalled).toBe(true);
   });
 });

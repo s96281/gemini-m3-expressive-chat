@@ -271,6 +271,7 @@ export class GeminiEngine implements AIEngine {
       apiEndpoint,
       systemPrompt,
       thinkingPreset = 'auto',
+      geminiTools,
     } = request;
 
     if (!apiKey) {
@@ -283,6 +284,11 @@ export class GeminiEngine implements AIEngine {
     const base = buildGeminiV1BetaBase(apiEndpoint);
     const endpoint = `${base}/models/${encodeURIComponent(resolvedModelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
     const thinkingConfig = buildGeminiThinkingConfig(resolvedModelId, thinkingPreset);
+
+    const tools: Array<Record<string, Record<string, never>>> = [];
+    if (geminiTools?.googleSearch) tools.push({ google_search: {} });
+    if (geminiTools?.codeExecution) tools.push({ code_execution: {} });
+    if (geminiTools?.urlContext) tools.push({ url_context: {} });
 
     const priorContents = (request.history || [])
       .filter(
@@ -314,6 +320,7 @@ export class GeminiEngine implements AIEngine {
           parts: buildGeminiParts(prompt, request.attachments),
         },
       ],
+      ...(tools.length > 0 ? { tools } : {}),
       generationConfig: {
         temperature: temperature ?? 0.7,
         maxOutputTokens: maxTokens ?? 2048,
@@ -338,6 +345,7 @@ export class GeminiEngine implements AIEngine {
       let accumulatedReasoning = '';
       let thinkingStartTime: number | null = null;
       let thinkingDuration = 0;
+      const groundingLinks = new Map<string, string>();
 
       await readStreamLines(res, signal, (line) => {
         if (!line.startsWith('data: ')) return;
@@ -346,11 +354,40 @@ export class GeminiEngine implements AIEngine {
 
         try {
           const data = JSON.parse(raw);
-          const parts = data?.candidates?.[0]?.content?.parts;
+          const candidate = data?.candidates?.[0];
+          const chunks = candidate?.groundingMetadata?.groundingChunks;
+          if (Array.isArray(chunks)) {
+            for (const ch of chunks) {
+              const uri = ch?.web?.uri;
+              const title = ch?.web?.title || uri;
+              if (typeof uri === 'string' && uri) {
+                groundingLinks.set(uri, typeof title === 'string' ? title : uri);
+              }
+            }
+          }
+
+          const parts = candidate?.content?.parts;
           if (!Array.isArray(parts)) return;
 
           for (const part of parts) {
-            if (!part || typeof part.text !== 'string' || part.text.length === 0) {
+            if (!part) continue;
+
+            if (part.executableCode && typeof part.executableCode.code === 'string') {
+              const lang = String(part.executableCode.language || 'python').toLowerCase();
+              const snippet = `\n\`\`\`${lang}\n${part.executableCode.code.trim()}\n\`\`\`\n`;
+              accumulatedContent += snippet;
+              callbacks.onToken?.(snippet, accumulatedContent);
+              continue;
+            }
+
+            if (part.codeExecutionResult && typeof part.codeExecutionResult.output === 'string') {
+              const out = `\n**Execution Output:**\n\`\`\`text\n${part.codeExecutionResult.output.trim()}\n\`\`\`\n`;
+              accumulatedContent += out;
+              callbacks.onToken?.(out, accumulatedContent);
+              continue;
+            }
+
+            if (typeof part.text !== 'string' || part.text.length === 0) {
               continue;
             }
 
@@ -371,6 +408,16 @@ export class GeminiEngine implements AIEngine {
           // Ignore malformed partial JSON chunks
         }
       });
+
+      if (groundingLinks.size > 0) {
+        const sourcesBlock =
+          '\n\n---\n**Sources:**\n' +
+          Array.from(groundingLinks.entries())
+            .map(([uri, title]) => `- [${title}](${uri})`)
+            .join('\n');
+        accumulatedContent += sourcesBlock;
+        callbacks.onToken?.(sourcesBlock, accumulatedContent);
+      }
 
       const result: StreamResult = {
         content: accumulatedContent,

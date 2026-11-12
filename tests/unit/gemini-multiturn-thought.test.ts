@@ -159,6 +159,7 @@ describe('Multi-turn conversation history & Gemini thought: true support', () =>
     useSettingsStore.getState().updateSettings({
       engineMode: 'gemini',
       apiKey: 'AIzaTestKey',
+      titleEmbeddingModel: 'off',
     });
 
     const fetchMock = vi

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { AlertCircle, Bot, RotateCcw, User } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AlertCircle, Bot, RotateCcw, User, X } from 'lucide-react';
 import { MessageNode } from '../../types/chat';
 import { BranchInfo } from '../../utils/treeUtils';
 import { BranchStepper } from './BranchStepper';
@@ -37,6 +38,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [hasOpenedEdit, setHasOpenedEdit] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
 
   const handleStartEdit = () => {
     setHasOpenedEdit(true);
@@ -54,6 +56,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     setEditContent(message.content);
     setIsEditing(false);
   };
+
+  const imageAttachments = (message.attachments || []).filter(
+    (att) => att.type.startsWith('image/') && Boolean(att.url)
+  );
+  const fileAttachments = (message.attachments || []).filter(
+    (att) => !att.type.startsWith('image/') || !att.url
+  );
 
   return (
     <div
@@ -107,10 +116,35 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               : 'rounded-tl-[6px] bg-surface-container-low text-on-surface border border-outline-variant/30'
           }`}
         >
-          {/* User Attachments display */}
-          {message.attachments && message.attachments.length > 0 && (
+          {/* Image Attachments Preview */}
+          {imageAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2.5">
+              {imageAttachments.map((att) => (
+                <button
+                  key={att.id}
+                  type="button"
+                  data-testid="message-image-preview"
+                  onClick={() => setPreviewImage({ url: att.url, name: att.name })}
+                  className="group/img relative overflow-hidden rounded-2xl border border-white/20 shadow-sm cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-primary"
+                  title={`Preview ${att.name}`}
+                >
+                  <img
+                    src={att.url}
+                    alt={att.name}
+                    className="max-w-[220px] max-h-[180px] object-cover block transition-transform duration-200 group-hover/img:scale-[1.02]"
+                  />
+                  <span className="absolute inset-x-0 bottom-0 px-2 py-0.5 bg-black/55 text-white text-[10px] truncate opacity-0 group-hover/img:opacity-100 transition-opacity">
+                    {att.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Non-image File Attachments display */}
+          {fileAttachments.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2.5">
-              {message.attachments.map((att) => (
+              {fileAttachments.map((att) => (
                 <div
                   key={att.id}
                   className="px-2.5 py-1 rounded-full bg-black/15 text-[11px] font-mono flex items-center gap-1"
@@ -237,6 +271,44 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           <User className="w-4 h-4 text-secondary" />
         </div>
       )}
+
+      {/* Image Lightbox Modal */}
+      {previewImage &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            data-testid="image-lightbox-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Image preview: ${previewImage.name}`}
+            onClick={() => setPreviewImage(null)}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-2"
+            >
+              <button
+                type="button"
+                data-testid="close-image-lightbox-btn"
+                aria-label="Close image preview"
+                onClick={() => setPreviewImage(null)}
+                className="absolute -top-3 -right-3 p-2 rounded-full bg-surface-container-highest text-on-surface shadow-elevation-3 hover:bg-surface-container transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <img
+                src={previewImage.url}
+                alt={previewImage.name}
+                className="max-w-[88vw] max-h-[82vh] object-contain rounded-2xl shadow-elevation-3 border border-white/15"
+              />
+              <span className="px-3 py-1 rounded-full bg-black/60 text-white text-xs font-medium">
+                {previewImage.name}
+              </span>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

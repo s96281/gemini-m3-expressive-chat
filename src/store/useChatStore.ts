@@ -8,6 +8,7 @@ import {
 } from '../utils/storage';
 import { buildConversationHistory, generateAutoTitle, switchBranchToMessage } from '../utils/treeUtils';
 import { getAIEngine } from '../services/aiEngine';
+import { generateTitleWithGeminiEmbedding } from '../services/embeddingTitle';
 import { useSettingsStore } from './useSettingsStore';
 
 export interface AddMessagePayload {
@@ -162,6 +163,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           maxTokens: settings.maxTokens,
           simulatedSpeed: settings.simulatedSpeed,
           thinkingPreset: settings.thinkingPreset || 'auto',
+          geminiTools: settings.geminiTools,
           attachments,
           signal,
           ...(settings.engineMode !== 'simulated'
@@ -189,6 +191,32 @@ export const useChatStore = create<ChatState>((set, get) => {
               result.reasoningContent,
               result.thinkingDuration
             );
+
+            const embeddingModel = settings.titleEmbeddingModel || 'gemini-embedding-2';
+            const isFirstTurn = !parentUserNode?.parentId;
+            if (
+              isFirstTurn &&
+              settings.engineMode === 'gemini' &&
+              settings.apiKey &&
+              embeddingModel !== 'off' &&
+              (prompt || result.content)
+            ) {
+              void generateTitleWithGeminiEmbedding({
+                prompt,
+                assistantResponse: result.content,
+                apiKey: settings.apiKey,
+                apiEndpoint: settings.apiEndpoint,
+                model: embeddingModel,
+              })
+                .then((embeddedTitle) => {
+                  if (embeddedTitle && embeddedTitle.trim()) {
+                    get().updateTitle(sessionId, embeddedTitle.trim());
+                  }
+                })
+                .catch(() => {
+                  // Keep local auto-generated title if embedding request fails
+                });
+            }
           },
           onError: (err) => {
             console.error('Streaming error:', err);

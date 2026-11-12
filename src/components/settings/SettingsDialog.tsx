@@ -26,7 +26,12 @@ import {
 import { useSettingsStore, PERSONA_PRESETS } from '../../store/useSettingsStore';
 import { useChatStore } from '../../store/useChatStore';
 import { useTheme } from '../../theme/ThemeProvider';
-import { EngineMode, SimulatedSpeed, ThinkingPreset } from '../../types/settings';
+import {
+  EngineMode,
+  SimulatedSpeed,
+  ThinkingPreset,
+  TitleEmbeddingModel,
+} from '../../types/settings';
 import { STORAGE_KEYS } from '../../utils/storage';
 import { getAIEngine } from '../../services/aiEngine';
 import { fetchGeminiModels } from '../../services/liveEngine';
@@ -68,6 +73,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     maxTokens,
     simulatedSpeed,
     thinkingPreset = 'auto',
+    titleEmbeddingModel = 'gemini-embedding-2',
     activePersonaId,
     customSystemPrompt,
     fetchedGeminiModels = [],
@@ -79,6 +85,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     setMaxTokens,
     setSimulatedSpeed,
     setThinkingPreset,
+    setTitleEmbeddingModel,
     setActivePersonaId,
     setCustomSystemPrompt,
     setFetchedGeminiModels,
@@ -482,7 +489,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                     data-testid="max-tokens-slider"
                     type="range"
                     min="256"
-                    max="8192"
+                    max="65536"
                     step="256"
                     value={maxTokens}
                     onChange={(e) => setMaxTokens(parseInt(e.target.value, 10))}
@@ -491,7 +498,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                   <div className="flex justify-between text-[10px] text-outline px-1">
                     <span>256</span>
                     <span>2048 (Default)</span>
-                    <span>8192</span>
+                    <span>65536</span>
                   </div>
                 </div>
 
@@ -708,6 +715,33 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                   data-testid="gemini-models-section"
                   className="p-4 rounded-2xl bg-surface-container border border-outline-variant/30 space-y-4 animate-fade-in"
                 >
+                  {/* Title Generation Embedding Model Selector */}
+                  <div className="space-y-2 pb-3 border-b border-outline-variant/25">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs font-semibold text-on-surface">
+                          Chat Title Embedding Model
+                        </h3>
+                        <p className="text-[11px] text-outline">
+                          Use Gemini Embedding 2 / 1 (<code className="font-mono">batchEmbedContents</code>) to semantically select conversation titles
+                        </p>
+                      </div>
+                      <select
+                        data-testid="title-embedding-model-select"
+                        aria-label="Chat Title Embedding Model"
+                        value={titleEmbeddingModel}
+                        onChange={(e) =>
+                          setTitleEmbeddingModel(e.target.value as TitleEmbeddingModel)
+                        }
+                        className="px-3 py-1.5 rounded-xl bg-surface-container-highest border border-outline-variant/40 text-xs font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="gemini-embedding-2">Gemini Embedding 2</option>
+                        <option value="gemini-embedding-001">Gemini Embedding 1 (001)</option>
+                        <option value="off">Off (Local Heuristic)</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-semibold text-on-surface flex items-center gap-2">

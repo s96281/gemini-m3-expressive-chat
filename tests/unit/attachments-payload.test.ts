@@ -100,8 +100,10 @@ describe('Attachment Reading & Model Payload Injection', () => {
 
   it('sends attachment content in Gemini API request body (including attachment-only messages)', async () => {
     let capturedBody: any = null;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
-      capturedBody = JSON.parse(String(init?.body || '{}'));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).includes(':streamGenerateContent')) {
+        capturedBody = JSON.parse(String(init?.body || '{}'));
+      }
       const sse = `data: ${JSON.stringify({
         candidates: [{ content: { parts: [{ text: 'I read the file!' }] } }],
       })}\n\n`;
