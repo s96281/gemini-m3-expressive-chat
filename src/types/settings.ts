@@ -11,6 +11,15 @@ export interface Persona {
   badgeLabel: string;
 }
 
+export interface GeminiModelInfo {
+  id: string;
+  name: string;
+  description: string;
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
+  supportedGenerationMethods?: string[];
+}
+
 export interface AppSettings {
   engineMode: EngineMode;
   apiKey?: string;
@@ -20,4 +29,7 @@ export interface AppSettings {
   simulatedSpeed: SimulatedSpeed;
   activePersonaId: string;
   customSystemPrompt: string;
+  fetchedGeminiModels?: GeminiModelInfo[];
+  enabledGeminiModels?: string[];
+  defaultModel?: string;
 }

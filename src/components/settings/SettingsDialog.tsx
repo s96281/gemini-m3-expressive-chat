@@ -18,6 +18,10 @@ import {
   Moon,
   Laptop,
   AlertTriangle,
+  RefreshCw,
+  Search,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { useSettingsStore, PERSONA_PRESETS } from '../../store/useSettingsStore';
 import { useChatStore } from '../../store/useChatStore';
@@ -25,6 +29,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { EngineMode, SimulatedSpeed } from '../../types/settings';
 import { STORAGE_KEYS } from '../../utils/storage';
 import { getAIEngine } from '../../services/aiEngine';
+import { fetchGeminiModels } from '../../services/liveEngine';
 
 export interface SettingsDialogProps {
   isOpen: boolean;
@@ -37,6 +42,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [showApiKey, setShowApiKey] = useState(false);
   const [testConnectionStatus, setTestConnectionStatus] = useState<string | null>(null);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [fetchModelsStatus, setFetchModelsStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(
     null
@@ -57,6 +68,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     simulatedSpeed,
     activePersonaId,
     customSystemPrompt,
+    fetchedGeminiModels = [],
+    enabledGeminiModels = [],
     setEngineMode,
     setApiKey,
     setApiEndpoint,
@@ -65,6 +78,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     setSimulatedSpeed,
     setActivePersonaId,
     setCustomSystemPrompt,
+    setFetchedGeminiModels,
+    setEnabledGeminiModels,
+    toggleGeminiModelEnabled,
     resetParameters,
     resetPersona,
     resetAllSettings,
@@ -99,9 +115,30 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   // Clear connection test status when switching engine
   useEffect(() => {
     setTestConnectionStatus(null);
+    setFetchModelsStatus(null);
   }, [engineMode]);
 
   if (!isOpen) return null;
+
+  const handleFetchGeminiModels = async () => {
+    setIsFetchingModels(true);
+    setFetchModelsStatus(null);
+    try {
+      const models = await fetchGeminiModels(apiKey || '', apiEndpoint);
+      setFetchedGeminiModels(models);
+      setFetchModelsStatus({
+        type: 'success',
+        message: `Fetched ${models.length} Gemini model${models.length === 1 ? '' : 's'} from /v1beta/models/`,
+      });
+    } catch (err: any) {
+      setFetchModelsStatus({
+        type: 'error',
+        message: err?.message || 'Failed to fetch Gemini models',
+      });
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
 
   const handleTestConnection = async () => {
     setTestConnectionStatus('Testing connection...');
@@ -627,6 +664,169 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                   </div>
                 </div>
               </div>
+
+              {/* Google Gemini Available Models Selector (/v1beta/models/) */}
+              {engineMode === 'gemini' && (
+                <div
+                  data-testid="gemini-models-section"
+                  className="p-4 rounded-2xl bg-surface-container border border-outline-variant/30 space-y-4 animate-fade-in"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-on-surface flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <span>Google Gemini Available Models</span>
+                      </h3>
+                      <p className="text-[11px] text-outline mt-0.5">
+                        Query <code className="font-mono text-primary">/v1beta/models/</code> and choose which models appear in the chat selector
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      data-testid="fetch-gemini-models-btn"
+                      disabled={isFetchingModels}
+                      onClick={handleFetchGeminiModels}
+                      className="px-4 py-2 rounded-full bg-primary text-on-primary text-xs font-medium shadow-sm hover:opacity-90 disabled:opacity-60 transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isFetchingModels ? 'animate-spin' : ''}`} />
+                      <span>{isFetchingModels ? 'Fetching...' : 'Fetch Models'}</span>
+                    </button>
+                  </div>
+
+                  {fetchModelsStatus && (
+                    <div
+                      data-testid="fetch-gemini-models-status"
+                      className={`px-3 py-2 rounded-xl text-xs font-medium border ${
+                        fetchModelsStatus.type === 'success'
+                          ? 'bg-primary-container/25 border-primary/30 text-primary'
+                          : 'bg-error-container/25 border-error/30 text-error'
+                      }`}
+                    >
+                      {fetchModelsStatus.message}
+                    </div>
+                  )}
+
+                  {fetchedGeminiModels.length > 0 ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="relative flex-1 min-w-[180px]">
+                          <Search className="w-3.5 h-3.5 text-outline absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            data-testid="gemini-model-search"
+                            value={modelSearchQuery}
+                            onChange={(e) => setModelSearchQuery(e.target.value)}
+                            placeholder="Filter models (e.g. 2.5, flash, pro)..."
+                            className="w-full pl-8 pr-3 py-1.5 rounded-full bg-surface-container-highest text-on-surface placeholder:text-outline text-xs border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs">
+                          <span
+                            data-testid="gemini-selected-count"
+                            className="px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container font-medium text-[11px]"
+                          >
+                            {enabledGeminiModels.length} / {fetchedGeminiModels.length} selected
+                          </span>
+                          <button
+                            type="button"
+                            data-testid="select-all-gemini-models"
+                            onClick={() =>
+                              setEnabledGeminiModels(fetchedGeminiModels.map((m) => m.id))
+                            }
+                            className="text-primary hover:underline font-medium text-[11px]"
+                          >
+                            Select All
+                          </button>
+                          <span className="text-outline-variant">·</span>
+                          <button
+                            type="button"
+                            data-testid="deselect-all-gemini-models"
+                            onClick={() => setEnabledGeminiModels([])}
+                            className="text-outline hover:text-on-surface hover:underline font-medium text-[11px]"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        data-testid="gemini-models-list"
+                        className="max-h-60 overflow-y-auto space-y-1.5 pr-1"
+                      >
+                        {fetchedGeminiModels
+                          .filter((m) => {
+                            const q = modelSearchQuery.trim().toLowerCase();
+                            if (!q) return true;
+                            return (
+                              m.name.toLowerCase().includes(q) ||
+                              m.id.toLowerCase().includes(q) ||
+                              m.description.toLowerCase().includes(q)
+                            );
+                          })
+                          .map((model) => {
+                            const isChecked = enabledGeminiModels.includes(model.id);
+                            const ctxLabel = model.inputTokenLimit
+                              ? model.inputTokenLimit >= 1000000
+                                ? `${Math.round(model.inputTokenLimit / 1000000)}M ctx`
+                                : `${Math.round(model.inputTokenLimit / 1000)}K ctx`
+                              : null;
+
+                            return (
+                              <label
+                                key={model.id}
+                                data-testid={`gemini-model-item-${model.id}`}
+                                className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                  isChecked
+                                    ? 'bg-primary-container/15 border-primary/50'
+                                    : 'bg-surface border-outline-variant/30 hover:bg-surface-container-highest/40'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  data-testid="gemini-model-checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleGeminiModelEnabled(model.id)}
+                                  className="sr-only"
+                                />
+                                <span className="mt-0.5 text-primary shrink-0">
+                                  {isChecked ? (
+                                    <CheckSquare className="w-4 h-4" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-outline" />
+                                  )}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-xs font-semibold text-on-surface truncate">
+                                      {model.name}
+                                    </span>
+                                    <code className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container-highest text-outline">
+                                      {model.id}
+                                    </code>
+                                    {ctxLabel && (
+                                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container">
+                                        {ctxLabel}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-outline truncate mt-0.5">
+                                    {model.description}
+                                  </p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-surface border border-dashed border-outline-variant/50 text-center text-xs text-outline">
+                      Enter your Google Gemini API key above and click <strong>Fetch Models</strong> to load available models from <code className="font-mono">/v1beta/models/</code>.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

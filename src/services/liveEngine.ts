@@ -5,6 +5,118 @@ import {
   StreamRequest,
   StreamResult,
 } from './aiEngine';
+import { GeminiModelInfo } from '../types/settings';
+import { useSettingsStore } from '../store/useSettingsStore';
+
+interface RawGeminiModel {
+  name: string;
+  displayName?: string;
+  description?: string;
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
+  supportedGenerationMethods?: string[];
+}
+
+interface RawGeminiModelsResponse {
+  models?: RawGeminiModel[];
+  nextPageToken?: string;
+}
+
+export function buildGeminiV1BetaBase(apiEndpoint?: string): string {
+  const trimmed = (apiEndpoint || '').trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    return 'https://generativelanguage.googleapis.com/v1beta';
+  }
+  if (trimmed.endsWith('/v1beta')) {
+    return trimmed;
+  }
+  return `${trimmed}/v1beta`;
+}
+
+export function resolveGeminiModelId(
+  modelNameOrId: string,
+  fetchedModels?: GeminiModelInfo[]
+): string {
+  const raw = (modelNameOrId || '').trim();
+  if (!raw) return 'gemini-1.5-flash';
+
+  const stripped = raw.replace(/^models\//, '');
+  const list = fetchedModels || useSettingsStore.getState().fetchedGeminiModels || [];
+  const matched = list.find(
+    (m) => m.id === stripped || m.name.toLowerCase() === raw.toLowerCase()
+  );
+  if (matched) return matched.id;
+
+  // Fallback mapping for built-in display names
+  const lower = stripped.toLowerCase();
+  if (lower === 'gemini 1.5 flash') return 'gemini-1.5-flash';
+  if (lower === 'gemini 1.5 pro') return 'gemini-1.5-pro';
+  if (lower.includes(' ')) return lower.replace(/\s+/g, '-');
+  return stripped;
+}
+
+export async function fetchGeminiModels(
+  apiKey: string,
+  apiEndpoint?: string
+): Promise<GeminiModelInfo[]> {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('Google Gemini API Key is required to fetch available models.');
+  }
+
+  const base = buildGeminiV1BetaBase(apiEndpoint);
+  const allRawModels: RawGeminiModel[] = [];
+  let pageToken: string | undefined = undefined;
+  let pageCount = 0;
+  const maxPages = 5;
+
+  do {
+    const params = new URLSearchParams({
+      key: apiKey.trim(),
+      pageSize: '100',
+    });
+    if (pageToken) {
+      params.set('pageToken', pageToken);
+    }
+
+    const res = await fetch(`${base}/models?${params.toString()}`);
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {
+        detail = '';
+      }
+      throw new Error(
+        `Failed to fetch Gemini models [HTTP ${res.status}]${detail ? `: ${detail}` : ''}`
+      );
+    }
+
+    const data: RawGeminiModelsResponse = await res.json();
+    if (Array.isArray(data.models)) {
+      allRawModels.push(...data.models);
+    }
+    pageToken = data.nextPageToken;
+    pageCount += 1;
+  } while (pageToken && pageCount < maxPages);
+
+  return allRawModels
+    .filter(
+      (m) =>
+        Array.isArray(m.supportedGenerationMethods) &&
+        m.supportedGenerationMethods.includes('generateContent')
+    )
+    .map((m) => {
+      const id = m.name.replace(/^models\//, '');
+      return {
+        id,
+        name: m.displayName || id,
+        description: m.description || 'Google Gemini generative model',
+        inputTokenLimit: m.inputTokenLimit,
+        outputTokenLimit: m.outputTokenLimit,
+        supportedGenerationMethods: m.supportedGenerationMethods,
+      };
+    });
+}
 
 // Helper to read SSE or chunked stream
 async function readSSEStream(
@@ -64,7 +176,15 @@ export class GeminiEngine implements AIEngine {
     request: StreamRequest,
     callbacks: StreamCallbacks
   ): Promise<StreamResult> {
-    const { prompt, model = 'gemini-1.5-flash', temperature, maxTokens, signal, apiKey = '' } = request;
+    const {
+      prompt,
+      model = 'gemini-1.5-flash',
+      temperature,
+      maxTokens,
+      signal,
+      apiKey = '',
+      apiEndpoint,
+    } = request;
 
     if (!apiKey) {
       const err = new Error('Google Gemini API Key is required. Please set it in Settings.');
@@ -72,7 +192,9 @@ export class GeminiEngine implements AIEngine {
       throw err;
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const resolvedModelId = resolveGeminiModelId(model);
+    const base = buildGeminiV1BetaBase(apiEndpoint);
+    const endpoint = `${base}/models/${encodeURIComponent(resolvedModelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
 
     const body = {
       contents: [
@@ -147,8 +269,9 @@ export class GeminiEngine implements AIEngine {
     }
 
     try {
+      const base = buildGeminiV1BetaBase(config.apiEndpoint);
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${config.apiKey}`
+        `${base}/models?key=${encodeURIComponent(config.apiKey)}`
       );
       const latencyMs = Date.now() - startTime;
       if (res.ok) {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AppSettings, EngineMode, Persona, SimulatedSpeed } from '../types/settings';
+import { AppSettings, EngineMode, GeminiModelInfo, Persona, SimulatedSpeed } from '../types/settings';
 import { STORAGE_KEYS } from '../utils/storage';
 
 export const PERSONA_PRESETS: Persona[] = [
@@ -58,6 +58,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   simulatedSpeed: 'natural',
   activePersonaId: 'architect',
   customSystemPrompt: '',
+  fetchedGeminiModels: [],
+  enabledGeminiModels: [],
+  defaultModel: 'Gemini 1.5 Flash',
 };
 
 export interface SettingsState extends AppSettings {
@@ -69,6 +72,10 @@ export interface SettingsState extends AppSettings {
   setSimulatedSpeed: (speed: SimulatedSpeed) => void;
   setActivePersonaId: (id: string) => void;
   setCustomSystemPrompt: (prompt: string) => void;
+  setFetchedGeminiModels: (models: GeminiModelInfo[]) => void;
+  setEnabledGeminiModels: (modelIds: string[]) => void;
+  toggleGeminiModelEnabled: (modelId: string) => void;
+  setDefaultModel: (model: string) => void;
   resetParameters: () => void;
   resetPersona: () => void;
   resetAllSettings: () => void;
@@ -93,6 +100,13 @@ function loadInitialSettings(): AppSettings {
       simulatedSpeed: data.simulatedSpeed || DEFAULT_SETTINGS.simulatedSpeed,
       activePersonaId: data.activePersonaId || DEFAULT_SETTINGS.activePersonaId,
       customSystemPrompt: data.customSystemPrompt ?? DEFAULT_SETTINGS.customSystemPrompt,
+      fetchedGeminiModels: Array.isArray(data.fetchedGeminiModels)
+        ? data.fetchedGeminiModels
+        : DEFAULT_SETTINGS.fetchedGeminiModels,
+      enabledGeminiModels: Array.isArray(data.enabledGeminiModels)
+        ? data.enabledGeminiModels
+        : DEFAULT_SETTINGS.enabledGeminiModels,
+      defaultModel: data.defaultModel || DEFAULT_SETTINGS.defaultModel,
     };
   } catch (err) {
     console.warn('Failed to load settings from storage:', err);
@@ -112,6 +126,9 @@ function persistSettings(state: AppSettings): void {
       simulatedSpeed: state.simulatedSpeed,
       activePersonaId: state.activePersonaId,
       customSystemPrompt: state.customSystemPrompt,
+      fetchedGeminiModels: state.fetchedGeminiModels,
+      enabledGeminiModels: state.enabledGeminiModels,
+      defaultModel: state.defaultModel,
     };
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(flat));
   } catch (err) {
@@ -141,6 +158,34 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
     setSimulatedSpeed: (simulatedSpeed) => sync(() => ({ simulatedSpeed })),
     setActivePersonaId: (activePersonaId) => sync(() => ({ activePersonaId })),
     setCustomSystemPrompt: (customSystemPrompt) => sync(() => ({ customSystemPrompt })),
+
+    setFetchedGeminiModels: (fetchedGeminiModels) =>
+      sync((prev) => {
+        const existingEnabled = prev.enabledGeminiModels || [];
+        const fetchedIds = new Set(fetchedGeminiModels.map((m) => m.id));
+        const validExisting = existingEnabled.filter((id) => fetchedIds.has(id));
+        // On first fetch (or if none of the previously enabled models exist), auto-enable top recommended models
+        const nextEnabled =
+          validExisting.length > 0
+            ? validExisting
+            : fetchedGeminiModels.slice(0, 5).map((m) => m.id);
+        return {
+          fetchedGeminiModels,
+          enabledGeminiModels: nextEnabled,
+        };
+      }),
+
+    setEnabledGeminiModels: (enabledGeminiModels) => sync(() => ({ enabledGeminiModels })),
+
+    toggleGeminiModelEnabled: (modelId) =>
+      sync((prev) => {
+        const current = prev.enabledGeminiModels || [];
+        const exists = current.includes(modelId);
+        const next = exists ? current.filter((id) => id !== modelId) : [...current, modelId];
+        return { enabledGeminiModels: next };
+      }),
+
+    setDefaultModel: (defaultModel) => sync(() => ({ defaultModel })),
 
     resetParameters: () =>
       sync(() => ({

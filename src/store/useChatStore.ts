@@ -206,7 +206,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         activeLeafId,
         messages,
         pinned: false,
-        model: 'Gemini 1.5 Flash',
+        model: useSettingsStore.getState().defaultModel || 'Gemini 1.5 Flash',
         createdAt: now,
         updatedAt: now,
       };

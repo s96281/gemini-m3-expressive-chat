@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, Sparkles, Zap, Brain, Cpu, Bot } from 'lucide-react';
 import { useChatStore } from '../../store/useChatStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
+import { GeminiModelInfo } from '../../types/settings';
 
 export interface ModelOption {
   id: string;
@@ -48,19 +50,69 @@ export const AVAILABLE_MODELS: ModelOption[] = [
   },
 ];
 
+function mapGeminiInfoToOption(m: GeminiModelInfo): ModelOption {
+  const lower = m.id.toLowerCase();
+  let icon: React.ElementType = Sparkles;
+  if (lower.includes('flash') || lower.includes('lite')) {
+    icon = Zap;
+  } else if (lower.includes('thinking') || lower.includes('exp')) {
+    icon = Brain;
+  }
+
+  let badge = 'Gemini API';
+  if (m.inputTokenLimit) {
+    badge =
+      m.inputTokenLimit >= 1000000
+        ? `${Math.round(m.inputTokenLimit / 1000000)}M ctx`
+        : `${Math.round(m.inputTokenLimit / 1000)}K ctx`;
+  }
+
+  return {
+    id: m.id,
+    name: m.name,
+    badge,
+    description: m.description || m.id,
+    icon,
+  };
+}
+
 export const ModelSelectorPill: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const { activeSessionId, getActiveSession, setSessionModel } = useChatStore();
+  const {
+    engineMode,
+    fetchedGeminiModels = [],
+    enabledGeminiModels = [],
+    defaultModel,
+    setDefaultModel,
+  } = useSettingsStore();
+
+  const displayModels = useMemo<ModelOption[]>(() => {
+    if (engineMode === 'gemini' && fetchedGeminiModels.length > 0) {
+      const enabledSet = new Set(enabledGeminiModels);
+      const selected = fetchedGeminiModels
+        .filter((m) => enabledSet.has(m.id))
+        .map(mapGeminiInfoToOption);
+
+      if (selected.length > 0) {
+        return selected;
+      }
+      // Fallback to built-in Gemini options if user cleared all checkboxes
+      return AVAILABLE_MODELS.filter((m) => m.id.startsWith('gemini'));
+    }
+    return AVAILABLE_MODELS;
+  }, [engineMode, fetchedGeminiModels, enabledGeminiModels]);
+
   const activeSession = getActiveSession();
-  const currentModelName = activeSession?.model || 'Gemini 1.5 Flash';
+  const currentModelName = activeSession?.model || defaultModel || 'Gemini 1.5 Flash';
 
   const selectedModel =
-    AVAILABLE_MODELS.find(
+    displayModels.find(
       (m) => m.name.toLowerCase() === currentModelName.toLowerCase() || m.id === currentModelName
-    ) || AVAILABLE_MODELS[0];
+    ) || displayModels[0];
 
   const SelectedIcon = selectedModel.icon;
 
@@ -96,6 +148,7 @@ export const ModelSelectorPill: React.FC = () => {
   }, [isOpen]);
 
   const handleSelectModel = (model: ModelOption) => {
+    setDefaultModel(model.name);
     if (activeSessionId) {
       setSessionModel(activeSessionId, model.name);
     }
@@ -103,7 +156,6 @@ export const ModelSelectorPill: React.FC = () => {
     const textarea = document.querySelector<HTMLTextAreaElement>('[data-testid="chat-input-textarea"]');
     textarea?.focus();
   };
-
 
   return (
     <div className="relative inline-block text-left">
@@ -132,12 +184,17 @@ export const ModelSelectorPill: React.FC = () => {
           data-testid="model-selector-menu"
           className="absolute bottom-full mb-2 left-0 w-72 rounded-2xl bg-surface-container-high border border-outline-variant/40 shadow-elevation-3 py-2 z-50 animate-scale-up"
         >
-          <div className="px-3 py-1.5 text-[11px] font-medium text-outline uppercase tracking-wider border-b border-outline-variant/20 mb-1">
-            Select Model
+          <div className="px-3 py-1.5 text-[11px] font-medium text-outline uppercase tracking-wider border-b border-outline-variant/20 mb-1 flex items-center justify-between">
+            <span>Select Model</span>
+            {engineMode === 'gemini' && fetchedGeminiModels.length > 0 && (
+              <span className="text-[10px] normal-case font-semibold text-primary">
+                Gemini ({displayModels.length})
+              </span>
+            )}
           </div>
 
-          <div className="space-y-1 px-1">
-            {AVAILABLE_MODELS.map((model) => {
+          <div className="space-y-1 px-1 max-h-72 overflow-y-auto">
+            {displayModels.map((model) => {
               const isSelected = selectedModel.id === model.id;
               const ModelIcon = model.icon;
 

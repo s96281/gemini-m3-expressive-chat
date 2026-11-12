@@ -5,6 +5,7 @@ import { ConversationView } from './components/conversation/ConversationView';
 import { InputDock } from './components/dock/InputDock';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { useChatStore } from './store/useChatStore';
+import { useSettingsStore } from './store/useSettingsStore';
 
 export const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -18,6 +19,7 @@ export const App: React.FC = () => {
     stopStreaming,
     getActiveSession,
   } = useChatStore();
+  const defaultModel = useSettingsStore((s) => s.defaultModel);
 
   const activeSession = getActiveSession();
 
@@ -84,7 +86,7 @@ export const App: React.FC = () => {
       <AppShell
         activeSessionId={activeSessionId}
         activeSessionTitle={activeSession?.title || 'New chat'}
-        modelName={activeSession?.model || 'Gemini 1.5 Flash'}
+        modelName={activeSession?.model || defaultModel || 'Gemini 1.5 Flash'}
         sessions={sessions}
         onNewChat={handleNewChat}
         onSelectSession={(id) => selectSession(id)}
