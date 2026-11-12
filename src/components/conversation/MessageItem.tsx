@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, User } from 'lucide-react';
+import { AlertCircle, Bot, RotateCcw, User } from 'lucide-react';
 import { MessageNode } from '../../types/chat';
 import { BranchInfo } from '../../utils/treeUtils';
 import { BranchStepper } from './BranchStepper';
@@ -165,19 +165,53 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           )}
 
           {/* Normal Text Display */}
-          <div
-            style={{ display: isEditing ? 'none' : 'block' }}
-            className="font-sans text-sm sm:text-base selection:bg-primary-container selection:text-on-primary-container"
-          >
-            {isUser ? (
-              <div className="whitespace-pre-wrap">{message.content}</div>
-            ) : (
-              <MarkdownRenderer
-                content={message.content}
-                isStreaming={message.isStreaming}
-              />
-            )}
-          </div>
+          {(!message.error || message.content || isUser) && (
+            <div
+              style={{ display: isEditing ? 'none' : 'block' }}
+              className="font-sans text-sm sm:text-base selection:bg-primary-container selection:text-on-primary-container"
+            >
+              {isUser ? (
+                <div className="whitespace-pre-wrap">{message.content}</div>
+              ) : (
+                <MarkdownRenderer
+                  content={message.content}
+                  isStreaming={message.isStreaming}
+                />
+              )}
+            </div>
+          )}
+
+          {/* API Error Banner (Assistant only) */}
+          {!isUser && message.error && (
+            <div
+              data-testid="message-error-banner"
+              role="alert"
+              className={`${
+                message.content ? 'mt-3 ' : ''
+              }flex items-start gap-2.5 p-3 rounded-2xl bg-error-container/30 border border-error/40 text-error text-sm`}
+            >
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-xs uppercase tracking-wider mb-0.5">
+                  Request Failed
+                </p>
+                <p className="text-xs sm:text-sm text-on-error-container break-words">
+                  {message.error}
+                </p>
+                {onRegenerate && (
+                  <button
+                    type="button"
+                    data-testid="error-retry-btn"
+                    onClick={onRegenerate}
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-error text-on-error hover:opacity-90 transition-opacity cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Retry
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
         </div>
 

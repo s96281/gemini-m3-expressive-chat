@@ -191,6 +191,7 @@ export function buildConversationHistory(
     visited.add(currentId);
     const node: MessageNode = session.messages[currentId];
     if (
+      !node.error &&
       node.content &&
       node.content.trim() &&
       (node.role === 'user' || node.role === 'assistant')

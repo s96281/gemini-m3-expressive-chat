@@ -311,4 +311,65 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
       includeThoughts: true,
     });
   });
+
+  test('displays API error banner in assistant message and recovers on Retry', async ({
+    page,
+  }) => {
+    let attempt = 0;
+
+    await page.route('**/v1beta/models**', async (route) => {
+      if (route.request().url().includes(':streamGenerateContent')) {
+        attempt += 1;
+        if (attempt === 1) {
+          await route.fulfill({
+            status: 400,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              error: {
+                code: 400,
+                message: 'API key not valid. Please pass a valid API key.',
+                status: 'INVALID_ARGUMENT',
+              },
+            }),
+          });
+          return;
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({
+            candidates: [{ content: { parts: [{ text: 'Recovered successfully!' }] } }],
+          })}\n\n`,
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ models: [] }),
+      });
+    });
+
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaInvalidKey');
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    await page.locator('[data-testid="chat-input-textarea"]').fill('Test error display');
+    await page.locator('[data-testid="send-message-btn"]').click();
+
+    const errorBanner = page.locator('[data-testid="message-error-banner"]');
+    await expect(errorBanner).toBeVisible();
+    await expect(errorBanner).toContainText('[400] API key not valid. Please pass a valid API key.');
+
+    // Click Retry inside the error banner and verify recovery
+    await page.locator('[data-testid="error-retry-btn"]').click();
+    await expect(page.locator('[data-testid="message-item-assistant"]').first()).toContainText(
+      'Recovered successfully!'
+    );
+    await expect(page.locator('[data-testid="message-error-banner"]')).toHaveCount(0);
+  });
 });

@@ -17,6 +17,7 @@ export interface MessageNode {
   reasoningContent?: string;
   thinkingDuration?: number;
   isStreaming?: boolean;
+  error?: string;
   model?: string;
   attachments?: Attachment[];
   rating?: 'up' | 'down' | null;

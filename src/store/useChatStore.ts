@@ -60,6 +60,7 @@ export interface ChatState {
     reasoning?: string,
     duration?: number
   ) => void;
+  setMessageError: (sessionId: string, messageId: string, error: string) => void;
   setMessageRating: (
     sessionId: string,
     messageId: string,
@@ -78,6 +79,35 @@ export interface ChatState {
   // Helpers
   getActiveSession: () => ChatSession | null;
   reloadFromStorage: () => void;
+}
+
+export function formatApiError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || 'Unknown API error');
+  const trimmed = raw.trim();
+  if (!trimmed) return 'Unknown API error';
+
+  // Extract optional status code prefix like "Gemini API error [400]: {...}" or "[401] {...}"
+  const statusMatch = trimmed.match(/\[(?:HTTP\s*)?(\d{3})\]/);
+  const statusPrefix = statusMatch ? `[${statusMatch[1]}] ` : '';
+
+  // Try to parse embedded JSON error body (e.g. Gemini / OpenAI / Anthropic error payloads)
+  const jsonStart = trimmed.indexOf('{');
+  if (jsonStart !== -1) {
+    try {
+      const parsed = JSON.parse(trimmed.slice(jsonStart));
+      const apiMsg =
+        parsed?.error?.message ||
+        parsed?.message ||
+        (typeof parsed?.error === 'string' ? parsed.error : null);
+      if (typeof apiMsg === 'string' && apiMsg.trim()) {
+        return `${statusPrefix}${apiMsg.trim()}`;
+      }
+    } catch {
+      // Fall through to raw message
+    }
+  }
+
+  return trimmed;
 }
 
 function initSessions(): ChatSession[] {
@@ -113,6 +143,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     const activePersona = settings.getActivePersona();
     const systemPrompt = settings.getEffectiveSystemPrompt();
     const engine = getAIEngine(settings.engineMode);
+
+    let errorHandled = false;
 
     try {
       await engine.streamChat(
@@ -155,15 +187,23 @@ export const useChatStore = create<ChatState>((set, get) => {
           },
           onError: (err) => {
             console.error('Streaming error:', err);
-            get().finalizeStreamingMessage(sessionId, assistantNodeId);
+            if (!errorHandled) {
+              errorHandled = true;
+              get().setMessageError(sessionId, assistantNodeId, formatApiError(err));
+            }
           },
         }
       );
     } catch (err: unknown) {
-      if (!signal.aborted) {
-        console.error('Streaming failure:', err instanceof Error ? err.message : String(err));
+      if (signal.aborted) {
+        get().finalizeStreamingMessage(sessionId, assistantNodeId);
+        return;
       }
-      get().finalizeStreamingMessage(sessionId, assistantNodeId);
+      console.error('Streaming failure:', err instanceof Error ? err.message : String(err));
+      if (!errorHandled) {
+        errorHandled = true;
+        get().setMessageError(sessionId, assistantNodeId, formatApiError(err));
+      }
     }
   };
 
@@ -529,6 +569,37 @@ export const useChatStore = create<ChatState>((set, get) => {
               reasoning !== undefined ? reasoning : existingNode.reasoningContent,
             thinkingDuration:
               duration !== undefined ? duration : existingNode.thinkingDuration,
+            isStreaming: false,
+          };
+
+          return {
+            ...session,
+            messages: {
+              ...session.messages,
+              [messageId]: updatedNode,
+            },
+            updatedAt: Date.now(),
+          };
+        });
+
+        saveSessionsToStorage(nextSessions);
+        return {
+          sessions: nextSessions,
+          isStreaming: false,
+          abortController: null,
+        };
+      });
+    },
+
+    setMessageError: (sessionId: string, messageId: string, error: string) => {
+      set((state) => {
+        const nextSessions = state.sessions.map((session) => {
+          if (session.id !== sessionId || !session.messages[messageId]) return session;
+
+          const existingNode = session.messages[messageId];
+          const updatedNode: MessageNode = {
+            ...existingNode,
+            error,
             isStreaming: false,
           };
 
