@@ -286,9 +286,9 @@ export class GeminiEngine implements AIEngine {
     const thinkingConfig = buildGeminiThinkingConfig(resolvedModelId, thinkingPreset);
 
     const tools: Array<Record<string, Record<string, never>>> = [];
-    if (geminiTools?.googleSearch) tools.push({ google_search: {} });
-    if (geminiTools?.codeExecution) tools.push({ code_execution: {} });
-    if (geminiTools?.urlContext) tools.push({ url_context: {} });
+    if (geminiTools?.googleSearch) tools.push({ googleSearch: {} });
+    if (geminiTools?.codeExecution) tools.push({ codeExecution: {} });
+    if (geminiTools?.urlContext) tools.push({ urlContext: {} });
 
     const priorContents = (request.history || [])
       .filter(

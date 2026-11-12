@@ -526,8 +526,8 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
 
     // 5. Verify tools, maxOutputTokens=65536, and embedding title call
     expect(capturedStreamBody.tools).toEqual([
-      { google_search: {} },
-      { code_execution: {} },
+      { googleSearch: {} },
+      { codeExecution: {} },
     ]);
     expect(capturedStreamBody.generationConfig.maxOutputTokens).toBe(65536);
     await expect.poll(() => embedCalled).toBe(true);

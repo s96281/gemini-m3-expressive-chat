@@ -135,9 +135,9 @@ describe('Gemini Embedding Title & Built-in Tools', () => {
       );
 
       expect(capturedBody.tools).toEqual([
-        { google_search: {} },
-        { code_execution: {} },
-        { url_context: {} },
+        { googleSearch: {} },
+        { codeExecution: {} },
+        { urlContext: {} },
       ]);
       expect(result.content).toContain('```python\nprint(6 * 7)\n```');
       expect(result.content).toContain('**Execution Output:**');
