@@ -6,7 +6,7 @@ import {
   loadActiveSessionId,
   saveActiveSessionId,
 } from '../utils/storage';
-import { generateAutoTitle, switchBranchToMessage } from '../utils/treeUtils';
+import { buildConversationHistory, generateAutoTitle, switchBranchToMessage } from '../utils/treeUtils';
 import { getAIEngine } from '../services/aiEngine';
 import { useSettingsStore } from './useSettingsStore';
 
@@ -107,6 +107,7 @@ export const useChatStore = create<ChatState>((set, get) => {
   ) => {
     const session = get().sessions.find((s) => s.id === sessionId);
     const model = session?.model || 'Gemini 1.5 Flash';
+    const history = buildConversationHistory(session, assistantNodeId);
 
     const settings = useSettingsStore.getState();
     const activePersona = settings.getActivePersona();
@@ -117,6 +118,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       await engine.streamChat(
         {
           prompt,
+          history,
           systemPrompt,
           personaName: activePersona.name,
           model,
@@ -489,6 +491,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             reasoningContent: reasoningContent || existingNode.reasoningContent,
             thinkingDuration:
               durationMs !== undefined ? durationMs : existingNode.thinkingDuration,
+            isStreaming: true,
           };
 
           return {

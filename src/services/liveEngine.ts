@@ -118,20 +118,18 @@ export async function fetchGeminiModels(
     });
 }
 
-// Helper to read SSE or chunked stream
-async function readSSEStream(
+// Helper to read SSE or chunked stream line-by-line
+async function readStreamLines(
   response: Response,
   signal: AbortSignal | undefined,
-  parseChunk: (line: string) => string | null,
-  callbacks: StreamCallbacks
-): Promise<string> {
+  onLine: (line: string) => void
+): Promise<void> {
   const reader = response.body?.getReader();
   if (!reader) {
     throw new Error('Response body is not readable');
   }
 
   const decoder = new TextDecoder('utf-8');
-  let accumulated = '';
   let buffer = '';
 
   try {
@@ -151,18 +149,33 @@ async function readSSEStream(
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith(':')) continue;
-
-        const token = parseChunk(trimmed);
-        if (token) {
-          accumulated += token;
-          callbacks.onToken?.(token, accumulated);
-        }
+        onLine(trimmed);
       }
+    }
+
+    const trailing = buffer.trim();
+    if (trailing && !trailing.startsWith(':')) {
+      onLine(trailing);
     }
   } finally {
     reader.releaseLock();
   }
+}
 
+async function readSSEStream(
+  response: Response,
+  signal: AbortSignal | undefined,
+  parseChunk: (line: string) => string | null,
+  callbacks: StreamCallbacks
+): Promise<string> {
+  let accumulated = '';
+  await readStreamLines(response, signal, (line) => {
+    const token = parseChunk(line);
+    if (token) {
+      accumulated += token;
+      callbacks.onToken?.(token, accumulated);
+    }
+  });
   return accumulated;
 }
 
@@ -184,6 +197,7 @@ export class GeminiEngine implements AIEngine {
       signal,
       apiKey = '',
       apiEndpoint,
+      systemPrompt,
     } = request;
 
     if (!apiKey) {
@@ -196,12 +210,23 @@ export class GeminiEngine implements AIEngine {
     const base = buildGeminiV1BetaBase(apiEndpoint);
     const endpoint = `${base}/models/${encodeURIComponent(resolvedModelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
 
+    const priorContents = (request.history || [])
+      .filter((h) => h.role !== 'system' && h.content && h.content.trim().length > 0)
+      .map((h) => ({
+        role: h.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: h.content }],
+      }));
+
     const body = {
+      ...(systemPrompt && systemPrompt.trim()
+        ? {
+            systemInstruction: {
+              parts: [{ text: systemPrompt.trim() }],
+            },
+          }
+        : {}),
       contents: [
-        ...(request.history?.map((h) => ({
-          role: h.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: h.content }],
-        })) || []),
+        ...priorContents,
         {
           role: 'user',
           parts: [{ text: prompt }],
@@ -226,26 +251,53 @@ export class GeminiEngine implements AIEngine {
         throw new Error(`Gemini API error [${res.status}]: ${errText}`);
       }
 
-      const accumulated = await readSSEStream(
-        res,
-        signal,
-        (line) => {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              const text =
-                data?.candidates?.[0]?.content?.parts?.[0]?.text;
-              return text || null;
-            } catch {
-              return null;
+      let accumulatedContent = '';
+      let accumulatedReasoning = '';
+      let thinkingStartTime: number | null = null;
+      let thinkingDuration = 0;
+
+      await readStreamLines(res, signal, (line) => {
+        if (!line.startsWith('data: ')) return;
+        const raw = line.slice(6).trim();
+        if (!raw || raw === '[DONE]') return;
+
+        try {
+          const data = JSON.parse(raw);
+          const parts = data?.candidates?.[0]?.content?.parts;
+          if (!Array.isArray(parts)) return;
+
+          for (const part of parts) {
+            if (!part || typeof part.text !== 'string' || part.text.length === 0) {
+              continue;
+            }
+
+            if (part.thought === true) {
+              if (thinkingStartTime === null) {
+                thinkingStartTime = Date.now();
+              }
+              accumulatedReasoning += part.text;
+              thinkingDuration = Math.max(100, Date.now() - thinkingStartTime);
+              callbacks.onReasoning?.(part.text, accumulatedReasoning);
+              callbacks.onThinkingDuration?.(thinkingDuration);
+            } else {
+              accumulatedContent += part.text;
+              callbacks.onToken?.(part.text, accumulatedContent);
             }
           }
-          return null;
-        },
-        callbacks
-      );
+        } catch {
+          // Ignore malformed partial JSON chunks
+        }
+      });
 
-      const result: StreamResult = { content: accumulated };
+      const result: StreamResult = {
+        content: accumulatedContent,
+        ...(accumulatedReasoning
+          ? {
+              reasoningContent: accumulatedReasoning,
+              thinkingDuration,
+            }
+          : {}),
+      };
       callbacks.onComplete?.(result);
       return result;
     } catch (err: unknown) {

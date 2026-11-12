@@ -103,4 +103,105 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
       'Gemini 2.5 Pro'
     );
   });
+
+  test('renders Gemini thought: true parts inside ThinkingAccordion and sends multi-turn history', async ({
+    page,
+  }) => {
+    const capturedBodies: any[] = [];
+
+    await page.route('**/v1beta/models/*:streamGenerateContent*', async (route) => {
+      const postData = route.request().postDataJSON();
+      capturedBodies.push(postData);
+
+      const turn = capturedBodies.length;
+      const sseBody =
+        turn === 1
+          ? [
+              `data: ${JSON.stringify({
+                candidates: [
+                  {
+                    content: {
+                      parts: [{ thought: true, text: 'Thinking: User introduced themselves as Bob.' }],
+                    },
+                  },
+                ],
+              })}\n\n`,
+              `data: ${JSON.stringify({
+                candidates: [
+                  {
+                    content: {
+                      parts: [{ text: 'Hello Bob! Nice to meet you.' }],
+                    },
+                  },
+                ],
+              })}\n\n`,
+            ].join('')
+          : [
+              `data: ${JSON.stringify({
+                candidates: [
+                  {
+                    content: {
+                      parts: [{ thought: true, text: 'Thinking: Checking prior context -> Bob.' }],
+                    },
+                  },
+                ],
+              })}\n\n`,
+              `data: ${JSON.stringify({
+                candidates: [
+                  {
+                    content: {
+                      parts: [{ text: 'Your name is Bob.' }],
+                    },
+                  },
+                ],
+              })}\n\n`,
+            ].join('');
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: sseBody,
+      });
+    });
+
+    // Configure Gemini mode + API key
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    const textarea = page.locator('[data-testid="chat-input-textarea"]');
+    const sendBtn = page.locator('[data-testid="send-message-btn"]');
+
+    // Turn 1
+    await textarea.fill('My name is Bob.');
+    await sendBtn.click();
+
+    await expect(page.locator('[data-testid="thinking-accordion-content"]').first()).toContainText(
+      'Thinking: User introduced themselves as Bob.'
+    );
+    await expect(page.locator('[data-testid="message-item-assistant"]').first()).toContainText(
+      'Hello Bob! Nice to meet you.'
+    );
+
+    // Turn 2 (multi-turn context continuation)
+    await textarea.fill('What is my name?');
+    await sendBtn.click();
+
+    await expect(page.locator('[data-testid="thinking-accordion-content"]').nth(1)).toContainText(
+      'Thinking: Checking prior context -> Bob.'
+    );
+    await expect(page.locator('[data-testid="message-item-assistant"]').nth(1)).toContainText(
+      'Your name is Bob.'
+    );
+
+    // Verify Turn 2 payload included Turn 1 user & model messages in contents
+    expect(capturedBodies).toHaveLength(2);
+    expect(capturedBodies[1].contents).toEqual([
+      { role: 'user', parts: [{ text: 'My name is Bob.' }] },
+      { role: 'model', parts: [{ text: 'Hello Bob! Nice to meet you.' }] },
+      { role: 'user', parts: [{ text: 'What is my name?' }] },
+    ]);
+  });
 });

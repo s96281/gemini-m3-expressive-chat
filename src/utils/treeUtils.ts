@@ -167,3 +167,41 @@ export function generateAutoTitle(firstPrompt: string): string {
 export function sanitizeFilename(title: string): string {
   return title.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
 }
+
+/**
+ * Walks upward from the current turn's parent user message to root,
+ * returning chronological prior turns for multi-turn context continuation.
+ */
+export function buildConversationHistory(
+  session: ChatSession | undefined,
+  assistantNodeId: string
+): { role: 'user' | 'assistant'; content: string }[] {
+  if (!session) return [];
+  const assistantNode = session.messages[assistantNodeId];
+  if (!assistantNode || !assistantNode.parentId) return [];
+
+  const currentUserNode = session.messages[assistantNode.parentId];
+  if (!currentUserNode || !currentUserNode.parentId) return [];
+
+  const history: { role: 'user' | 'assistant'; content: string }[] = [];
+  const visited = new Set<string>();
+  let currentId: string | null = currentUserNode.parentId;
+
+  while (currentId && session.messages[currentId] && !visited.has(currentId)) {
+    visited.add(currentId);
+    const node: MessageNode = session.messages[currentId];
+    if (
+      node.content &&
+      node.content.trim() &&
+      (node.role === 'user' || node.role === 'assistant')
+    ) {
+      history.unshift({
+        role: node.role,
+        content: node.content,
+      });
+    }
+    currentId = node.parentId;
+  }
+
+  return history;
+}
