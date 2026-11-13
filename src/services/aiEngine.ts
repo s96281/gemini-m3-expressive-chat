@@ -1,4 +1,4 @@
-import { Attachment } from '../types/chat';
+import { Attachment, TokenUsage } from '../types/chat';
 import {
   EngineMode,
   GeminiToolsConfig,
@@ -27,6 +27,7 @@ export interface StreamResult {
   content: string;
   reasoningContent?: string;
   thinkingDuration?: number;
+  tokenUsage?: TokenUsage;
 }
 
 export interface StreamCallbacks {

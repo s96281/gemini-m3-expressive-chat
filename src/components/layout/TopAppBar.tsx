@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Menu,
   PanelLeftClose,
@@ -13,11 +13,14 @@ import {
   Code,
   FileCode,
   File,
+  Gauge,
 } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useChatStore } from '../../store/useChatStore';
 import { exportSessionToFile } from '../../services/exportService';
+import { computeThreadTokenStats, formatTokenCount } from '../../utils/tokenStats';
+import { resolveGeminiModelId } from '../../services/liveEngine';
 
 export interface TopAppBarProps {
   title?: string;
@@ -42,6 +45,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
 }) => {
   const { mode, resolvedMode, toggleMode } = useTheme();
   const activePersona = useSettingsStore((s) => s.getActivePersona());
+  const fetchedGeminiModels = useSettingsStore((s) => s.fetchedGeminiModels);
   const activeSession = useChatStore((s) => s.getActiveSession());
 
   const hasActiveSession = propHasActiveSession !== undefined ? propHasActiveSession : Boolean(activeSession);
@@ -56,17 +60,40 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
 
+  const [isTokenPopoverOpen, setIsTokenPopoverOpen] = useState(false);
+  const tokenPopoverRef = useRef<HTMLDivElement>(null);
+
+  const tokenStats = useMemo(() => computeThreadTokenStats(activeSession), [activeSession]);
+
+  const inputTokenLimit = useMemo(() => {
+    if (!fetchedGeminiModels || fetchedGeminiModels.length === 0) return undefined;
+    const rawModel = activeSession?.model || modelName;
+    const resolvedId = resolveGeminiModelId(rawModel);
+    const match = fetchedGeminiModels.find(
+      (m) => m.id === rawModel || m.id === resolvedId || m.name === rawModel
+    );
+    return match?.inputTokenLimit;
+  }, [fetchedGeminiModels, activeSession?.model, modelName]);
+
+  const contextUsagePct =
+    inputTokenLimit && inputTokenLimit > 0
+      ? Math.min(100, Math.round((tokenStats.contextTokens / inputTokenLimit) * 1000) / 10)
+      : null;
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
         setIsExportMenuOpen(false);
       }
+      if (tokenPopoverRef.current && !tokenPopoverRef.current.contains(e.target as Node)) {
+        setIsTokenPopoverOpen(false);
+      }
     };
-    if (isExportMenuOpen) {
+    if (isExportMenuOpen || isTokenPopoverOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isExportMenuOpen]);
+  }, [isExportMenuOpen, isTokenPopoverOpen]);
 
   const renderThemeIcon = () => {
     if (mode === 'system') return <Laptop className="w-5 h-5 text-on-surface-variant" />;
@@ -137,8 +164,105 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
         </div>
       </div>
 
-      {/* Right: Export, Theme Toggle & Settings */}
+      {/* Right: Token Stats, Export, Theme Toggle & Settings */}
       <div className="flex items-center gap-1 sm:gap-1.5">
+        {/* Thread Token Statistics Pill */}
+        {hasActiveSession && tokenStats.messageCount > 0 && (
+          <div className="relative" ref={tokenPopoverRef}>
+            <button
+              type="button"
+              data-testid="conversation-token-stats"
+              onClick={() => setIsTokenPopoverOpen((prev) => !prev)}
+              aria-label="Conversation token statistics"
+              aria-haspopup="true"
+              aria-expanded={isTokenPopoverOpen}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface border border-outline-variant/40 text-xs font-medium tabular-nums transition-colors active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              title="Active thread token usage"
+            >
+              <Gauge className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span>
+                {tokenStats.hasEstimated ? '~' : ''}
+                {formatTokenCount(tokenStats.totalTokens)} tok
+              </span>
+            </button>
+
+            {isTokenPopoverOpen && (
+              <div
+                data-testid="token-stats-popover"
+                className="absolute right-0 mt-2 w-72 rounded-2xl bg-surface-container-high border border-outline-variant/40 shadow-elevation-3 p-4 z-30 animate-fade-in text-xs text-on-surface"
+              >
+                <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-outline-variant/30">
+                  <span className="font-semibold text-sm text-on-surface">
+                    Thread Token Usage
+                  </span>
+                  {tokenStats.hasEstimated && (
+                    <span className="px-1.5 py-0.5 rounded-md bg-tertiary-container text-on-tertiary-container text-[10px] font-medium">
+                      Estimated
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2 tabular-nums">
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface-variant">Total Tokens</span>
+                    <span className="font-semibold text-on-surface">
+                      {tokenStats.hasEstimated ? '~' : ''}
+                      {formatTokenCount(tokenStats.totalTokens)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface-variant">Input (Prompt)</span>
+                    <span>{formatTokenCount(tokenStats.promptTokens)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface-variant">Output (Completion)</span>
+                    <span>{formatTokenCount(tokenStats.completionTokens)}</span>
+                  </div>
+                  {tokenStats.thoughtsTokens > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-on-surface-variant">Thinking</span>
+                      <span>{formatTokenCount(tokenStats.thoughtsTokens)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-2 border-t border-outline-variant/20">
+                    <span className="text-on-surface-variant">Current Context</span>
+                    <span className="font-medium">
+                      {formatTokenCount(tokenStats.contextTokens)}
+                      {inputTokenLimit ? ` / ${formatTokenCount(inputTokenLimit)}` : ''}
+                    </span>
+                  </div>
+
+                  {contextUsagePct !== null && (
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between text-[11px] text-on-surface-variant mb-1">
+                        <span>Context Window</span>
+                        <span>{contextUsagePct}%</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-surface-container-highest overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            contextUsagePct >= 85
+                              ? 'bg-error'
+                              : contextUsagePct >= 60
+                                ? 'bg-tertiary'
+                                : 'bg-primary'
+                          }`}
+                          style={{ width: `${Math.max(2, contextUsagePct)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-2 border-t border-outline-variant/20 text-on-surface-variant">
+                    <span>Messages in Thread</span>
+                    <span>{tokenStats.messageCount}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Export dropdown button */}
         {hasActiveSession && (
           <div className="relative" ref={exportMenuRef}>

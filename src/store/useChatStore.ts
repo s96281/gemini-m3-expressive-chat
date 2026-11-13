@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Attachment, ChatSession, MessageNode, Role } from '../types/chat';
+import { Attachment, ChatSession, MessageNode, Role, TokenUsage } from '../types/chat';
 import {
   loadSessionsFromStorage,
   saveSessionsToStorage,
@@ -59,7 +59,8 @@ export interface ChatState {
     messageId: string,
     finalContent?: string,
     reasoning?: string,
-    duration?: number
+    duration?: number,
+    tokenUsage?: TokenUsage
   ) => void;
   setMessageError: (sessionId: string, messageId: string, error: string) => void;
   setMessageRating: (
@@ -189,7 +190,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               assistantNodeId,
               result.content,
               result.reasoningContent,
-              result.thinkingDuration
+              result.thinkingDuration,
+              result.tokenUsage
             );
 
             const embeddingModel = settings.titleEmbeddingModel || 'gemini-embedding-2';
@@ -588,7 +590,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       messageId: string,
       finalContent?: string,
       reasoning?: string,
-      duration?: number
+      duration?: number,
+      tokenUsage?: TokenUsage
     ) => {
       set((state) => {
         const nextSessions = state.sessions.map((session) => {
@@ -602,6 +605,7 @@ export const useChatStore = create<ChatState>((set, get) => {
               reasoning !== undefined ? reasoning : existingNode.reasoningContent,
             thinkingDuration:
               duration !== undefined ? duration : existingNode.thinkingDuration,
+            ...(tokenUsage !== undefined ? { tokenUsage } : {}),
             isStreaming: false,
           };
 

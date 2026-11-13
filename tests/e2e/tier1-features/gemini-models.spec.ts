@@ -588,4 +588,72 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
     await page.locator('[data-testid="mermaid-toggle-code-btn"]').click();
     await expect(page.locator('[data-testid="mermaid-block"]')).toContainText('User --> Gemini');
   });
+
+  test('displays thread token statistics pill, breakdown popover, and per-message token badge from Gemini usageMetadata', async ({
+    page,
+  }) => {
+    await page.route('**/v1beta/models**', async (route) => {
+      if (route.request().url().includes(':streamGenerateContent')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: 'Here is the token usage response.' }],
+                },
+              },
+            ],
+            usageMetadata: {
+              promptTokenCount: 120,
+              candidatesTokenCount: 80,
+              thoughtsTokenCount: 40,
+              totalTokenCount: 240,
+            },
+          })}\n\n`,
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ models: [] }),
+      });
+    });
+
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    await page.locator('[data-testid="chat-input-textarea"]').fill('Count my tokens');
+    await page.locator('[data-testid="send-message-btn"]').click();
+
+    await expect(page.locator('[data-testid="message-item-assistant"]')).toContainText(
+      'Here is the token usage response.'
+    );
+
+    // Per-message token badge
+    const msgBadge = page.locator('[data-testid="message-token-badge"]').first();
+    await expect(msgBadge).toBeVisible();
+    await expect(msgBadge).toContainText('240 tok');
+
+    // Top bar thread token stats pill
+    const statsPill = page.locator('[data-testid="conversation-token-stats"]');
+    await expect(statsPill).toBeVisible();
+    await expect(statsPill).toContainText('240 tok');
+
+    // Click to open breakdown popover
+    await statsPill.click();
+    const popover = page.locator('[data-testid="token-stats-popover"]');
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText('Thread Token Usage');
+    await expect(popover).toContainText('240');
+    await expect(popover).toContainText('120');
+    await expect(popover).toContainText('80');
+    await expect(popover).toContainText('40');
+  });
 });

@@ -7,6 +7,7 @@ import { BranchStepper } from './BranchStepper';
 import { ThinkingAccordion } from './ThinkingAccordion';
 import { MessageActionToolbar } from './MessageActionToolbar';
 import { MarkdownRenderer } from '../rich/MarkdownRenderer';
+import { formatTokenCount } from '../../utils/tokenStats';
 
 
 export interface MessageItemProps {
@@ -105,6 +106,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           >
             {formatTimestamp(message.createdAt)}
           </time>
+
+          {!isUser && message.tokenUsage && (
+            <span
+              data-testid="message-token-badge"
+              className="px-1.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-medium tabular-nums"
+              title={`Prompt: ${formatTokenCount(message.tokenUsage.promptTokens)} · Output: ${formatTokenCount(message.tokenUsage.completionTokens)}${
+                message.tokenUsage.thoughtsTokens
+                  ? ` · Thinking: ${formatTokenCount(message.tokenUsage.thoughtsTokens)}`
+                  : ''
+              }`}
+            >
+              {formatTokenCount(message.tokenUsage.totalTokens)} tok
+            </span>
+          )}
         </div>
 
         {/* Message Content Bubble / Card */}

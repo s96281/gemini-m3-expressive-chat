@@ -5,7 +5,7 @@ import {
   StreamRequest,
   StreamResult,
 } from './aiEngine';
-import { Attachment } from '../types/chat';
+import { Attachment, TokenUsage } from '../types/chat';
 import { GeminiModelInfo } from '../types/settings';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { buildGeminiThinkingConfig } from '../utils/thinkingConfig';
@@ -345,6 +345,7 @@ export class GeminiEngine implements AIEngine {
       let accumulatedReasoning = '';
       let thinkingStartTime: number | null = null;
       let thinkingDuration = 0;
+      let tokenUsage: TokenUsage | undefined;
       const groundingLinks = new Map<string, string>();
 
       await readStreamLines(res, signal, (line) => {
@@ -354,6 +355,29 @@ export class GeminiEngine implements AIEngine {
 
         try {
           const data = JSON.parse(raw);
+
+          if (data?.usageMetadata && typeof data.usageMetadata === 'object') {
+            const um = data.usageMetadata;
+            const promptTokens = typeof um.promptTokenCount === 'number' ? um.promptTokenCount : 0;
+            const completionTokens =
+              typeof um.candidatesTokenCount === 'number' ? um.candidatesTokenCount : 0;
+            const thoughtsTokens =
+              typeof um.thoughtsTokenCount === 'number' ? um.thoughtsTokenCount : 0;
+            const totalTokens =
+              typeof um.totalTokenCount === 'number'
+                ? um.totalTokenCount
+                : promptTokens + completionTokens + thoughtsTokens;
+
+            if (totalTokens > 0 || promptTokens > 0 || completionTokens > 0) {
+              tokenUsage = {
+                promptTokens,
+                completionTokens,
+                ...(thoughtsTokens > 0 ? { thoughtsTokens } : {}),
+                totalTokens,
+              };
+            }
+          }
+
           const candidate = data?.candidates?.[0];
           const chunks = candidate?.groundingMetadata?.groundingChunks;
           if (Array.isArray(chunks)) {
@@ -427,6 +451,7 @@ export class GeminiEngine implements AIEngine {
               thinkingDuration,
             }
           : {}),
+        ...(tokenUsage ? { tokenUsage } : {}),
       };
       callbacks.onComplete?.(result);
       return result;

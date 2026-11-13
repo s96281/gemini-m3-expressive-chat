@@ -10,6 +10,14 @@ export interface Attachment {
   dataBase64?: string;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  thoughtsTokens?: number;
+  totalTokens: number;
+  isEstimated?: boolean;
+}
+
 export interface MessageNode {
   id: string;
   parentId: string | null;
@@ -23,6 +31,7 @@ export interface MessageNode {
   model?: string;
   attachments?: Attachment[];
   rating?: 'up' | 'down' | null;
+  tokenUsage?: TokenUsage;
   createdAt: number;
 }
 
