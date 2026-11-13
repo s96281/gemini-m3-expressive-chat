@@ -12,7 +12,7 @@ export const ThinkingAccordion: React.FC<ThinkingAccordionProps> = ({
   thinkingDuration = 0,
   isStreaming = false,
 }) => {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const userToggledRef = useRef(false);
 
   if (!reasoningContent) return null;

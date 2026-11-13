@@ -169,19 +169,17 @@ export function sanitizeFilename(title: string): string {
 }
 
 /**
- * Walks upward from the current turn's parent user message to root,
- * returning chronological prior turns for multi-turn context continuation.
+ * Walks upward from a target node (inclusive) to root or the latest context summary node,
+ * returning chronological turns for active context or compression.
  */
-export function buildConversationHistory(
+export function buildActiveContextHistory(
   session: ChatSession | undefined,
-  assistantNodeId: string
+  fromNodeId?: string | null,
+  compressionPrompt?: string
 ): { role: 'user' | 'assistant'; content: string; attachments?: MessageNode['attachments'] }[] {
   if (!session) return [];
-  const assistantNode = session.messages[assistantNodeId];
-  if (!assistantNode || !assistantNode.parentId) return [];
-
-  const currentUserNode = session.messages[assistantNode.parentId];
-  if (!currentUserNode || !currentUserNode.parentId) return [];
+  const startId = fromNodeId !== undefined ? fromNodeId : session.activeLeafId;
+  if (!startId || !session.messages[startId]) return [];
 
   const history: {
     role: 'user' | 'assistant';
@@ -189,13 +187,35 @@ export function buildConversationHistory(
     attachments?: MessageNode['attachments'];
   }[] = [];
   const visited = new Set<string>();
-  let currentId: string | null = currentUserNode.parentId;
+  let currentId: string | null = startId;
 
   while (currentId && session.messages[currentId] && !visited.has(currentId)) {
     visited.add(currentId);
     const node: MessageNode = session.messages[currentId];
     const hasText = Boolean(node.content && node.content.trim());
     const hasAttachments = Boolean(node.attachments && node.attachments.length > 0);
+
+    if (!node.error && node.isContextSummary && hasText) {
+      if (compressionPrompt) {
+        history.unshift(
+          {
+            role: 'user',
+            content: compressionPrompt,
+          },
+          {
+            role: 'assistant',
+            content: node.content,
+          }
+        );
+      } else {
+        history.unshift({
+          role: 'assistant',
+          content: node.content,
+        });
+      }
+      break;
+    }
+
     if (
       !node.error &&
       (hasText || hasAttachments) &&
@@ -212,3 +232,23 @@ export function buildConversationHistory(
 
   return history;
 }
+
+/**
+ * Walks upward from the current turn's parent user message to root (or latest compressed summary),
+ * returning chronological prior turns for multi-turn context continuation.
+ */
+export function buildConversationHistory(
+  session: ChatSession | undefined,
+  assistantNodeId: string,
+  compressionPrompt?: string
+): { role: 'user' | 'assistant'; content: string; attachments?: MessageNode['attachments'] }[] {
+  if (!session) return [];
+  const assistantNode = session.messages[assistantNodeId];
+  if (!assistantNode || !assistantNode.parentId) return [];
+
+  const currentUserNode = session.messages[assistantNode.parentId];
+  if (!currentUserNode || !currentUserNode.parentId) return [];
+
+  return buildActiveContextHistory(session, currentUserNode.parentId, compressionPrompt);
+}
+

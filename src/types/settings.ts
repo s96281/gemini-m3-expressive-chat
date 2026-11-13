@@ -43,4 +43,6 @@ export interface AppSettings {
   fetchedGeminiModels?: GeminiModelInfo[];
   enabledGeminiModels?: string[];
   defaultModel?: string;
+  autoCompressContext?: boolean;
+  autoCompressThresholdPct?: number;
 }

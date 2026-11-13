@@ -80,6 +80,27 @@ export function computeThreadTokenStats(session: ChatSession | null): ThreadToke
     }
 
     if (msg.role === 'assistant') {
+      if (msg.isContextSummary) {
+        const estSummary = msg.tokenUsage?.completionTokens || estimateTokenCount(msg.content);
+        if (msg.tokenUsage) {
+          promptTokens += msg.tokenUsage.promptTokens;
+          completionTokens += msg.tokenUsage.completionTokens;
+          thoughtsTokens += msg.tokenUsage.thoughtsTokens || 0;
+          totalTokens += msg.tokenUsage.totalTokens;
+          if (msg.tokenUsage.isEstimated) {
+            hasEstimated = true;
+          }
+        } else if (estSummary > 0) {
+          hasEstimated = true;
+          completionTokens += estSummary;
+          totalTokens += estSummary;
+        }
+        // Reset active context window to the compressed handoff summary
+        runningTextTokens = estSummary;
+        contextTokens = estSummary;
+        continue;
+      }
+
       if (msg.tokenUsage) {
         promptTokens += msg.tokenUsage.promptTokens;
         completionTokens += msg.tokenUsage.completionTokens;
@@ -135,6 +156,7 @@ export function formatTokenCount(count: number): string {
 /**
  * Converts the active conversation branch into Gemini REST `contents` format
  * for accurate token counting via `POST /v1beta/models/{model}:countTokens`.
+ * Starts from the latest compressed context summary if present.
  */
 export function buildGeminiContentsFromSession(session: ChatSession | null): Array<{
   role: 'user' | 'model';
@@ -147,9 +169,30 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
     parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>;
   }> = [];
 
-  for (const msg of timeline) {
+  let startIndex = 0;
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    if (timeline[i].isContextSummary && !timeline[i].error && timeline[i].content.trim()) {
+      startIndex = i;
+      break;
+    }
+  }
+
+  for (let i = startIndex; i < timeline.length; i++) {
+    const msg = timeline[i];
     if (msg.role === 'system') continue;
     const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+
+    if (msg.isContextSummary && msg.content && msg.content.trim().length > 0) {
+      contents.push({
+        role: 'user',
+        parts: [{ text: 'Summarize this conversation as a handoff briefing.' }],
+      });
+      contents.push({
+        role: 'model',
+        parts: [{ text: msg.content }],
+      });
+      continue;
+    }
 
     if (msg.role === 'user') {
       if (msg.attachments && msg.attachments.length > 0) {

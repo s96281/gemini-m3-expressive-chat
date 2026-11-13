@@ -68,7 +68,22 @@ function getReasoningTrace(prompt: string): string {
   return `• Deconstructing prompt semantics and contextual constraints.\n• Retrieving relevant foundational domain knowledge and principles.\n• Structuring multi-perspective evaluation and logical synthesis.\n• Verifying clarity, conciseness, and precision before response composition.`;
 }
 
-function generateResponseText(prompt: string, personaName = 'Assistant'): string {
+function generateResponseText(
+  prompt: string,
+  personaName = 'Assistant',
+  history?: StreamRequest['history']
+): string {
+  if (prompt.includes('Summarize this conversation as a handoff briefing')) {
+    const turns = (history || []).filter((h) => h.content && h.content.trim());
+    const userTopics = turns
+      .filter((h) => h.role === 'user')
+      .map((h) => h.content.trim().slice(0, 80))
+      .join('；');
+    return `1. **目標與當前狀態**：已完成先前 ${turns.length} 則對話訊息之上下文壓縮與狀態整理${
+      userTopics ? `（涵蓋主題：${userTopics}）` : ''
+    }。\n2. **關鍵決策與結論**：保留核心技術識別碼、架構決策與關鍵上下文資訊，移除冗餘歷史對話。\n3. **下一步行動**：根據此交接摘要繼續後續任務與對話。`;
+  }
+
   const p = prompt.toLowerCase();
 
   if (p.includes('space exploration')) {
@@ -160,7 +175,7 @@ export class SimulatedEngine implements AIEngine {
 
     // Phase 2: Main response token streaming
     if (!signal?.aborted) {
-      const fullText = generateResponseText(prompt, personaName);
+      const fullText = generateResponseText(prompt, personaName, request.history);
       // Split into word tokens preserving spacing
       const words = fullText.split(' ');
 

@@ -77,6 +77,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fetchedGeminiModels: [],
   enabledGeminiModels: [],
   defaultModel: 'Gemini 1.5 Flash',
+  autoCompressContext: false,
+  autoCompressThresholdPct: 80,
 };
 
 export interface SettingsState extends AppSettings {
@@ -97,6 +99,8 @@ export interface SettingsState extends AppSettings {
   setEnabledGeminiModels: (modelIds: string[]) => void;
   toggleGeminiModelEnabled: (modelId: string) => void;
   setDefaultModel: (model: string) => void;
+  setAutoCompressContext: (enabled: boolean) => void;
+  setAutoCompressThresholdPct: (pct: number) => void;
   resetParameters: () => void;
   resetPersona: () => void;
   resetAllSettings: () => void;
@@ -134,6 +138,14 @@ function loadInitialSettings(): AppSettings {
         ? data.enabledGeminiModels
         : DEFAULT_SETTINGS.enabledGeminiModels,
       defaultModel: data.defaultModel || DEFAULT_SETTINGS.defaultModel,
+      autoCompressContext:
+        typeof data.autoCompressContext === 'boolean'
+          ? data.autoCompressContext
+          : DEFAULT_SETTINGS.autoCompressContext,
+      autoCompressThresholdPct:
+        typeof data.autoCompressThresholdPct === 'number'
+          ? data.autoCompressThresholdPct
+          : DEFAULT_SETTINGS.autoCompressThresholdPct,
     };
   } catch (err) {
     console.warn('Failed to load settings from storage:', err);
@@ -159,6 +171,8 @@ function persistSettings(state: AppSettings): void {
       fetchedGeminiModels: state.fetchedGeminiModels,
       enabledGeminiModels: state.enabledGeminiModels,
       defaultModel: state.defaultModel,
+      autoCompressContext: state.autoCompressContext,
+      autoCompressThresholdPct: state.autoCompressThresholdPct,
     };
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(flat));
   } catch (err) {
@@ -243,12 +257,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
 
     setDefaultModel: (defaultModel) => sync(() => ({ defaultModel })),
 
+    setAutoCompressContext: (autoCompressContext) => sync(() => ({ autoCompressContext })),
+
+    setAutoCompressThresholdPct: (autoCompressThresholdPct) =>
+      sync(() => ({
+        autoCompressThresholdPct: Math.min(100, Math.max(10, autoCompressThresholdPct)),
+      })),
+
     resetParameters: () =>
       sync(() => ({
         temperature: DEFAULT_SETTINGS.temperature,
         maxTokens: DEFAULT_SETTINGS.maxTokens,
         simulatedSpeed: DEFAULT_SETTINGS.simulatedSpeed,
         thinkingPreset: DEFAULT_SETTINGS.thinkingPreset,
+        autoCompressContext: DEFAULT_SETTINGS.autoCompressContext,
+        autoCompressThresholdPct: DEFAULT_SETTINGS.autoCompressThresholdPct,
       })),
 
     resetPersona: () =>

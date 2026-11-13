@@ -14,6 +14,7 @@ import {
   FileCode,
   File,
   Gauge,
+  Minimize2,
 } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useSettingsStore } from '../../store/useSettingsStore';
@@ -58,8 +59,12 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
   const apiEndpoint = useSettingsStore((s) => s.apiEndpoint);
   const fetchedGeminiModels = useSettingsStore((s) => s.fetchedGeminiModels);
   const upsertGeminiModelInfo = useSettingsStore((s) => s.upsertGeminiModelInfo);
+  const autoCompressContext = useSettingsStore((s) => s.autoCompressContext ?? false);
+  const autoCompressThresholdPct = useSettingsStore((s) => s.autoCompressThresholdPct ?? 80);
+  const setAutoCompressContext = useSettingsStore((s) => s.setAutoCompressContext);
   const activeSession = useChatStore((s) => s.getActiveSession());
   const isStreaming = useChatStore((s) => s.isStreaming);
+  const compressContext = useChatStore((s) => s.compressContext);
 
   const hasActiveSession = propHasActiveSession !== undefined ? propHasActiveSession : Boolean(activeSession);
   const handleExportSession = (format: 'md' | 'json' | 'txt' | 'html') => {
@@ -377,10 +382,65 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
                     <span>Messages in Thread</span>
                     <span>{tokenStats.messageCount}</span>
                   </div>
+
+                  {/* Context Compression Controls */}
+                  <div className="pt-2.5 mt-1 border-t border-outline-variant/30 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium text-on-surface">
+                        自動壓縮上下文 ({autoCompressThresholdPct}%)
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={Boolean(autoCompressContext)}
+                        aria-label="Toggle auto context compression"
+                        data-testid="popover-auto-compress-toggle"
+                        onClick={() => setAutoCompressContext(!autoCompressContext)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 cursor-pointer ${
+                          autoCompressContext ? 'bg-primary' : 'bg-outline-variant/60'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-on-primary shadow-sm transition duration-200 ${
+                            autoCompressContext ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      data-testid="popover-compress-context-btn"
+                      disabled={isStreaming}
+                      onClick={() => {
+                        setIsTokenPopoverOpen(false);
+                        void compressContext();
+                      }}
+                      className="w-full py-1.5 px-3 rounded-xl bg-secondary-container hover:bg-secondary-container/80 disabled:opacity-50 text-on-secondary-container text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Minimize2 className="w-3.5 h-3.5" />
+                      <span>立即手動壓縮上下文</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
           </div>
+        )}
+
+        {/* Quick Manual Context Compression Button */}
+        {hasActiveSession && tokenStats.messageCount > 0 && (
+          <button
+            type="button"
+            data-testid="compress-context-btn"
+            disabled={isStreaming}
+            onClick={() => void compressContext()}
+            aria-label="Compress conversation context"
+            className="p-2 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest disabled:opacity-50 transition-colors active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            title="手動壓縮上下文 (Compress Context)"
+          >
+            <Minimize2 className="w-4 h-4" />
+          </button>
         )}
 
         {/* Export dropdown button */}

@@ -78,6 +78,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     customSystemPrompt,
     fetchedGeminiModels = [],
     enabledGeminiModels = [],
+    autoCompressContext = false,
+    autoCompressThresholdPct = 80,
     setEngineMode,
     setApiKey,
     setApiEndpoint,
@@ -91,6 +93,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     setFetchedGeminiModels,
     setEnabledGeminiModels,
     toggleGeminiModelEnabled,
+    setAutoCompressContext,
+    setAutoCompressThresholdPct,
     resetParameters,
     resetPersona,
     resetAllSettings,
@@ -560,6 +564,76 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                         {THINKING_PRESET_META[preset].shortLabel}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Context Compression Settings */}
+                <div
+                  data-testid="context-compression-settings"
+                  className="pt-4 border-t border-outline-variant/30 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-xs font-medium text-on-surface block">
+                        Context Compression (接近上下文窗口自動壓縮)
+                      </span>
+                      <span className="text-[11px] text-outline">
+                        Automatically summarize conversation as a handoff briefing when approaching the context window limit, or compress manually anytime
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={Boolean(autoCompressContext)}
+                      aria-label="Auto-compress near context window"
+                      data-testid="auto-compress-toggle"
+                      onClick={() => setAutoCompressContext(!autoCompressContext)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 cursor-pointer ${
+                        autoCompressContext ? 'bg-primary' : 'bg-outline-variant/60'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-on-primary shadow-sm transition duration-200 ${
+                          autoCompressContext ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-xs">
+                      <label
+                        htmlFor="auto-compress-threshold-slider"
+                        className="font-medium text-on-surface flex items-center gap-1.5"
+                      >
+                        <span>Auto-Compress Window Threshold</span>
+                        <span className="text-outline text-[11px] font-normal">
+                          (Context Window %)
+                        </span>
+                      </label>
+                      <span
+                        data-testid="auto-compress-threshold-value"
+                        className="font-mono font-semibold px-2 py-0.5 rounded bg-surface-container-highest text-primary text-xs"
+                      >
+                        {autoCompressThresholdPct}%
+                      </span>
+                    </div>
+                    <input
+                      id="auto-compress-threshold-slider"
+                      data-testid="auto-compress-threshold-slider"
+                      type="range"
+                      min="50"
+                      max="95"
+                      step="5"
+                      value={autoCompressThresholdPct}
+                      onChange={(e) => setAutoCompressThresholdPct(parseInt(e.target.value, 10))}
+                      className="w-full h-2 bg-surface-container-highest rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                    <div className="flex justify-between text-[10px] text-outline px-1">
+                      <span>50%</span>
+                      <span>80% (Default)</span>
+                      <span>95%</span>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useChatStore } from '../../store/useChatStore';
 import { getActiveTimeline, getBranchInfo } from '../../utils/treeUtils';
 import { MessageItem } from './MessageItem';
@@ -26,18 +26,22 @@ export const ConversationView: React.FC<ConversationViewProps> = ({ onSelectProm
   } = useChatStore();
 
   const activeSession = getActiveSession();
-  const activeTimeline = getActiveTimeline(activeSession);
+  const activeTimeline = useMemo(() => getActiveTimeline(activeSession), [activeSession]);
 
   const scrollToBottom = useCallback((smooth = true) => {
     if (!containerRef.current) return;
     const { scrollHeight, clientHeight } = containerRef.current;
-    containerRef.current.scrollTo({
-      top: scrollHeight - clientHeight,
-      behavior: smooth ? 'smooth' : 'auto',
-    });
+    if (typeof containerRef.current.scrollTo === 'function') {
+      containerRef.current.scrollTo({
+        top: scrollHeight - clientHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    } else {
+      containerRef.current.scrollTop = scrollHeight - clientHeight;
+    }
     isAutoScrollPausedRef.current = false;
-    setShowFab(false);
-    setHasUnread(false);
+    setShowFab((prev) => (prev ? false : prev));
+    setHasUnread((prev) => (prev ? false : prev));
   }, []);
 
   // Handle scroll events to detect upward scrolling
@@ -48,11 +52,11 @@ export const ConversationView: React.FC<ConversationViewProps> = ({ onSelectProm
 
     if (distanceFromBottom > 150) {
       isAutoScrollPausedRef.current = true;
-      setShowFab(true);
+      setShowFab((prev) => (prev ? prev : true));
     } else {
       isAutoScrollPausedRef.current = false;
-      setShowFab(false);
-      setHasUnread(false);
+      setShowFab((prev) => (prev ? false : prev));
+      setHasUnread((prev) => (prev ? false : prev));
     }
   };
 
@@ -63,7 +67,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({ onSelectProm
     if (!isAutoScrollPausedRef.current) {
       scrollToBottom(false);
     } else if (isStreaming) {
-      setHasUnread(true);
+      setHasUnread((prev) => (prev ? prev : true));
     }
   }, [activeTimeline, isStreaming, scrollToBottom]);
 

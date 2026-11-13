@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Bot, RotateCcw, User, X } from 'lucide-react';
+import { AlertCircle, Bot, Minimize2, RotateCcw, User, X } from 'lucide-react';
 import { MessageNode } from '../../types/chat';
 import { BranchInfo } from '../../utils/treeUtils';
 import { BranchStepper } from './BranchStepper';
@@ -69,6 +69,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     <div
       data-testid="message-item"
       data-role={message.role}
+      data-context-summary={message.isContextSummary ? 'true' : undefined}
       className={`group relative flex w-full gap-3 sm:gap-4 my-2 transition-all rounded-[24px] ${
         isUser ? 'justify-end' : 'justify-start'
       }`}
@@ -106,6 +107,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           >
             {formatTimestamp(message.createdAt)}
           </time>
+
+          {!isUser && message.isContextSummary && (
+            <span
+              data-testid="context-summary-badge"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-semibold"
+            >
+              <Minimize2 className="w-3 h-3 text-secondary" />
+              <span>上下文壓縮摘要</span>
+            </span>
+          )}
 
           {!isUser && message.tokenUsage && (
             <span

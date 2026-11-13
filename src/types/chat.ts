@@ -32,6 +32,7 @@ export interface MessageNode {
   attachments?: Attachment[];
   rating?: 'up' | 'down' | null;
   tokenUsage?: TokenUsage;
+  isContextSummary?: boolean;
   createdAt: number;
 }
 

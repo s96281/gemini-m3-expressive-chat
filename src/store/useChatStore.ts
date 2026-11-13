@@ -6,7 +6,17 @@ import {
   loadActiveSessionId,
   saveActiveSessionId,
 } from '../utils/storage';
-import { buildConversationHistory, generateAutoTitle, switchBranchToMessage } from '../utils/treeUtils';
+import {
+  buildActiveContextHistory,
+  buildConversationHistory,
+  generateAutoTitle,
+  switchBranchToMessage,
+} from '../utils/treeUtils';
+import {
+  CONTEXT_COMPRESSION_PROMPT,
+  shouldAutoCompressSession,
+} from '../utils/contextCompression';
+import { estimateTokenCount } from '../utils/tokenStats';
 import { getAIEngine } from '../services/aiEngine';
 import { generateTitleWithGeminiEmbedding } from '../services/embeddingTitle';
 import { useSettingsStore } from './useSettingsStore';
@@ -19,6 +29,7 @@ export interface AddMessagePayload {
   model?: string;
   reasoningContent?: string;
   thinkingDuration?: number;
+  isContextSummary?: boolean;
 }
 
 export interface ChatState {
@@ -75,6 +86,7 @@ export interface ChatState {
 
   // High-level AI actions
   sendChatMessage: (prompt: string, attachments?: Attachment[]) => Promise<void>;
+  compressContext: (sessionId?: string) => Promise<void>;
   regenerateResponse: (messageId: string) => Promise<void>;
   editUserMessage: (messageId: string, newContent: string) => Promise<void>;
 
@@ -139,7 +151,11 @@ export const useChatStore = create<ChatState>((set, get) => {
   ) => {
     const session = get().sessions.find((s) => s.id === sessionId);
     const model = session?.model || 'Gemini 1.5 Flash';
-    const history = buildConversationHistory(session, assistantNodeId);
+    const history = buildConversationHistory(
+      session,
+      assistantNodeId,
+      CONTEXT_COMPRESSION_PROMPT
+    );
     const assistantNode = session?.messages[assistantNodeId];
     const parentUserNode =
       assistantNode?.parentId ? session?.messages[assistantNode.parentId] : undefined;
@@ -440,6 +456,9 @@ export const useChatStore = create<ChatState>((set, get) => {
             model: payload.model,
             reasoningContent: payload.reasoningContent,
             thinkingDuration: payload.thinkingDuration,
+            ...(payload.isContextSummary !== undefined
+              ? { isContextSummary: payload.isContextSummary }
+              : {}),
             createdAt: now,
           };
           createdNode = newNode;
@@ -751,6 +770,21 @@ export const useChatStore = create<ChatState>((set, get) => {
         sessionId = get().createSession();
       }
 
+      // Check if auto-compression should run before sending new message
+      const preSession = get().sessions.find((s) => s.id === sessionId);
+      const preSettings = useSettingsStore.getState();
+      if (
+        shouldAutoCompressSession({
+          session: preSession,
+          autoCompressContext: preSettings.autoCompressContext,
+          autoCompressThresholdPct: preSettings.autoCompressThresholdPct,
+          fetchedGeminiModels: preSettings.fetchedGeminiModels,
+          additionalTokens: estimateTokenCount(trimmed),
+        })
+      ) {
+        await get().compressContext(sessionId);
+      }
+
       const userNode = get().addMessageNode(sessionId, {
         role: 'user',
         content: trimmed,
@@ -776,6 +810,125 @@ export const useChatStore = create<ChatState>((set, get) => {
         trimmed,
         nextAbortController.signal
       );
+
+      // Check if auto-compression should run after response completes
+      if (!nextAbortController.signal.aborted) {
+        const postSession = get().sessions.find((s) => s.id === sessionId);
+        const postSettings = useSettingsStore.getState();
+        const completedNode = postSession?.messages[assistantNode.id];
+        if (
+          !completedNode?.error &&
+          shouldAutoCompressSession({
+            session: postSession,
+            autoCompressContext: postSettings.autoCompressContext,
+            autoCompressThresholdPct: postSettings.autoCompressThresholdPct,
+            fetchedGeminiModels: postSettings.fetchedGeminiModels,
+          })
+        ) {
+          await get().compressContext(sessionId);
+        }
+      }
+    },
+
+    compressContext: async (targetSessionId?: string) => {
+      const sessionId = targetSessionId || get().activeSessionId;
+      if (!sessionId) return;
+
+      const session = get().sessions.find((s) => s.id === sessionId);
+      if (!session || !session.activeLeafId) return;
+
+      const history = buildActiveContextHistory(
+        session,
+        session.activeLeafId,
+        CONTEXT_COMPRESSION_PROMPT
+      );
+      if (history.length === 0) return;
+
+      const { isStreaming, abortController } = get();
+      if (isStreaming && abortController) {
+        abortController.abort();
+      }
+
+      const model = session.model || 'Gemini 1.5 Flash';
+      const summaryNode = get().addMessageNode(sessionId, {
+        role: 'assistant',
+        content: '',
+        parentId: session.activeLeafId,
+        model,
+        isContextSummary: true,
+      });
+
+      const nextAbortController = new AbortController();
+      get().setStreaming(true, nextAbortController);
+      const signal = nextAbortController.signal;
+
+      const settings = useSettingsStore.getState();
+      const activePersona = settings.getActivePersona();
+      const engine = getAIEngine(settings.engineMode);
+      let errorHandled = false;
+
+      try {
+        await engine.streamChat(
+          {
+            prompt: CONTEXT_COMPRESSION_PROMPT,
+            history,
+            personaName: activePersona.name,
+            model,
+            temperature: settings.temperature,
+            maxTokens: settings.maxTokens,
+            simulatedSpeed: settings.simulatedSpeed,
+            thinkingPreset: 'off',
+            signal,
+            ...(settings.engineMode !== 'simulated'
+              ? {
+                  apiKey: settings.apiKey,
+                  apiEndpoint: settings.apiEndpoint,
+                }
+              : {}),
+          },
+          {
+            onToken: (_token, accumulated) => {
+              get().updateMessageContent(sessionId, summaryNode.id, accumulated, true);
+            },
+            onReasoning: (_chunk, accumulated) => {
+              get().setStreamingReasoning(sessionId, summaryNode.id, accumulated);
+            },
+            onThinkingDuration: (durationMs) => {
+              get().setStreamingReasoning(sessionId, summaryNode.id, '', durationMs);
+            },
+            onComplete: (result) => {
+              get().finalizeStreamingMessage(
+                sessionId,
+                summaryNode.id,
+                result.content,
+                result.reasoningContent,
+                result.thinkingDuration,
+                result.tokenUsage
+              );
+            },
+            onError: (err) => {
+              console.error('Context compression error:', err);
+              if (!errorHandled) {
+                errorHandled = true;
+                get().setMessageError(sessionId, summaryNode.id, formatApiError(err));
+              }
+            },
+          }
+        );
+      } catch (err: unknown) {
+        if (signal.aborted) {
+          get().finalizeStreamingMessage(sessionId, summaryNode.id);
+          return;
+        }
+        console.error(
+          'Context compression failure:',
+          err instanceof Error ? err.message : String(err)
+        );
+        if (!errorHandled) {
+          errorHandled = true;
+          get().setMessageError(sessionId, summaryNode.id, formatApiError(err));
+        }
+      }
     },
 
     regenerateResponse: async (messageId: string) => {

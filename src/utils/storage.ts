@@ -30,8 +30,12 @@ export function normalizeSession(raw: Partial<ChatSession>): ChatSession {
           reasoningContent: m.reasoningContent,
           thinkingDuration: m.thinkingDuration,
           isStreaming: Boolean(m.isStreaming),
+          ...(m.error !== undefined ? { error: m.error } : {}),
           model: m.model,
           attachments: m.attachments || [],
+          ...(m.rating !== undefined ? { rating: m.rating } : {}),
+          ...(m.tokenUsage !== undefined ? { tokenUsage: m.tokenUsage } : {}),
+          ...(m.isContextSummary !== undefined ? { isContextSummary: m.isContextSummary } : {}),
           createdAt: m.createdAt || createdAt,
         };
       });
@@ -47,8 +51,12 @@ export function normalizeSession(raw: Partial<ChatSession>): ChatSession {
           reasoningContent: m.reasoningContent,
           thinkingDuration: m.thinkingDuration,
           isStreaming: Boolean(m.isStreaming),
+          ...(m.error !== undefined ? { error: m.error } : {}),
           model: m.model,
           attachments: m.attachments || [],
+          ...(m.rating !== undefined ? { rating: m.rating } : {}),
+          ...(m.tokenUsage !== undefined ? { tokenUsage: m.tokenUsage } : {}),
+          ...(m.isContextSummary !== undefined ? { isContextSummary: m.isContextSummary } : {}),
           createdAt: m.createdAt || createdAt,
         };
       }

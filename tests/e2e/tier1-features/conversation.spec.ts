@@ -191,7 +191,7 @@ test.describe('Tier 1: Conversation View & Streaming (CONV-02..09)', () => {
       }
     });
 
-    test('TC-CONV-04-3: Clicking reasoning accordion collapses thought trace', async ({ page }) => {
+    test('TC-CONV-04-3: Reasoning accordion defaults to collapsed and toggles thought trace', async ({ page }) => {
       const input = page.locator('[data-testid="chat-input-textarea"], textarea').first();
       await input.fill('Analyze this algorithmic complexity');
       await page.keyboard.press('Enter');
@@ -199,15 +199,12 @@ test.describe('Tier 1: Conversation View & Streaming (CONV-02..09)', () => {
 
       const accordionHeader = page.locator('[data-testid="thinking-accordion-header"], button:has-text("Thinking")').first();
       if (await accordionHeader.isVisible()) {
-        await accordionHeader.click();
-        await page.waitForTimeout(250);
-
         const content = page.locator('[data-testid="thinking-accordion-content"]');
-        const isHidden = await content.evaluate((el) => {
+        const isInitiallyHidden = await content.evaluate((el) => {
           const style = window.getComputedStyle(el);
           return style.display === 'none' || el.clientHeight === 0;
         }).catch(() => true);
-        expect(isHidden).toBe(true);
+        expect(isInitiallyHidden).toBe(true);
       }
     });
 
