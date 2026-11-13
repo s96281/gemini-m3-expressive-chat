@@ -3,8 +3,13 @@ import {
   estimateTokenCount,
   computeThreadTokenStats,
   formatTokenCount,
+  buildGeminiContentsFromSession,
 } from '../../src/utils/tokenStats';
-import { GeminiEngine } from '../../src/services/liveEngine';
+import {
+  GeminiEngine,
+  countGeminiTokens,
+  getGeminiModelInfo,
+} from '../../src/services/liveEngine';
 import { useChatStore } from '../../src/store/useChatStore';
 import { useSettingsStore } from '../../src/store/useSettingsStore';
 import { ChatSession } from '../../src/types/chat';
@@ -218,5 +223,88 @@ describe('Thread Token Statistics', () => {
       thoughtsTokens: 40,
       totalTokens: 240,
     });
+  });
+
+  it('calls Gemini models.countTokens and models.get REST endpoints for exact token count and inputTokenLimit', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (String(url).includes(':countTokens')) {
+        return new Response(JSON.stringify({ totalTokens: 312 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          name: 'models/gemini-2.5-flash',
+          displayName: 'Gemini 2.5 Flash',
+          description: 'Fast model',
+          inputTokenLimit: 1048576,
+          outputTokenLimit: 65536,
+          supportedGenerationMethods: ['generateContent'],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    });
+    global.fetch = fetchMock;
+
+    const session: ChatSession = {
+      id: 's-api',
+      title: 'API Count Test',
+      rootMessageId: 'u1',
+      activeLeafId: 'a1',
+      pinned: false,
+      model: 'gemini-2.5-flash',
+      createdAt: 1,
+      updatedAt: 2,
+      messages: {
+        u1: {
+          id: 'u1',
+          parentId: null,
+          childrenIds: ['a1'],
+          role: 'user',
+          content: 'Hello Gemini',
+          createdAt: 1,
+        },
+        a1: {
+          id: 'a1',
+          parentId: 'u1',
+          childrenIds: [],
+          role: 'assistant',
+          content: 'Hello user!',
+          createdAt: 2,
+        },
+      },
+    };
+
+    const contents = buildGeminiContentsFromSession(session);
+    expect(contents).toEqual([
+      { role: 'user', parts: [{ text: 'Hello Gemini' }] },
+      { role: 'model', parts: [{ text: 'Hello user!' }] },
+    ]);
+
+    const countRes = await countGeminiTokens({
+      model: 'gemini-2.5-flash',
+      apiKey: 'AIzaTestKey',
+      contents,
+    });
+    expect(countRes.totalTokens).toBe(312);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/v1beta/models/gemini-2.5-flash:countTokens?key=AIzaTestKey'),
+      expect.objectContaining({ method: 'POST' })
+    );
+
+    const modelInfo = await getGeminiModelInfo({
+      model: 'gemini-2.5-flash',
+      apiKey: 'AIzaTestKey',
+    });
+    expect(modelInfo.inputTokenLimit).toBe(1048576);
+    expect(modelInfo.outputTokenLimit).toBe(65536);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/v1beta/models/gemini-2.5-flash?key=AIzaTestKey'),
+      expect.objectContaining({ method: 'GET' })
+    );
   });
 });

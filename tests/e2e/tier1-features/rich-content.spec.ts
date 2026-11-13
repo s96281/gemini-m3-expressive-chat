@@ -196,6 +196,26 @@ test.describe('Tier 1: Rich Content & Code Artifacts (RICH-01..05)', () => {
       expect(bg).not.toBe('transparent');
     });
 
+    test('TC-RICH-02-6: Code block can be collapsed and expanded via header toggle button', async ({ page }) => {
+      const codeBlock = page.locator('[data-testid="code-block"]').first();
+      const toggleBtn = codeBlock.locator('[data-testid="toggle-code-collapse-btn"]');
+      const body = codeBlock.locator('[data-testid="code-block-body"]');
+
+      await expect(toggleBtn).toBeVisible();
+      await expect(body).toBeVisible();
+      await expect(codeBlock.locator('[data-testid="code-line-count"]')).toContainText('lines');
+
+      // Collapse
+      await toggleBtn.click();
+      await expect(codeBlock).toHaveAttribute('data-collapsed', 'true');
+      await expect(body).toHaveCount(0);
+
+      // Expand
+      await toggleBtn.click();
+      await expect(codeBlock).toHaveAttribute('data-collapsed', 'false');
+      await expect(body).toBeVisible();
+    });
+
   });
 
   // =========================================================================

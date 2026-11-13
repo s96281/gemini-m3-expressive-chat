@@ -706,4 +706,86 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
     expect(afterClick.bodyScrollTop).toBe(0);
     expect(afterClick.docScrollTop).toBe(0);
   });
+
+  test('uses Gemini countTokens and models.get to display exact context tokens and model inputTokenLimit', async ({
+    page,
+  }) => {
+    let countTokensCalled = false;
+    let modelsGetCalled = false;
+
+    await page.route('**/v1beta/models**', async (route) => {
+      const url = route.request().url();
+      if (url.includes(':streamGenerateContent')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({
+            candidates: [{ content: { parts: [{ text: 'Counted response.' }] } }],
+            usageMetadata: {
+              promptTokenCount: 100,
+              candidatesTokenCount: 50,
+              totalTokenCount: 150,
+            },
+          })}\n\n`,
+        });
+        return;
+      }
+
+      if (url.includes(':countTokens')) {
+        countTokensCalled = true;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ totalTokens: 312 }),
+        });
+        return;
+      }
+
+      if (/\/v1beta\/models\/[^/?]+(\?|$)/.test(url)) {
+        modelsGetCalled = true;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            name: 'models/gemini-1.5-flash',
+            displayName: 'Gemini 1.5 Flash',
+            inputTokenLimit: 1048576,
+            outputTokenLimit: 8192,
+            supportedGenerationMethods: ['generateContent'],
+          }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ models: [] }),
+      });
+    });
+
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await page.locator('[data-testid="close-settings-btn"]').click();
+
+    await page.locator('[data-testid="chat-input-textarea"]').fill('Check exact context');
+    await page.locator('[data-testid="send-message-btn"]').click();
+
+    await expect(page.locator('[data-testid="message-item-assistant"]')).toContainText(
+      'Counted response.'
+    );
+
+    const statsPill = page.locator('[data-testid="conversation-token-stats"]');
+    await expect(statsPill).toBeVisible();
+    await statsPill.click();
+
+    const popover = page.locator('[data-testid="token-stats-popover"]');
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText('API Counted');
+    await expect(popover).toContainText('312 / 1,048,576');
+    expect(countTokensCalled).toBe(true);
+    expect(modelsGetCalled).toBe(true);
+  });
 });

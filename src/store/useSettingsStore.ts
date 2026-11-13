@@ -93,6 +93,7 @@ export interface SettingsState extends AppSettings {
   setActivePersonaId: (id: string) => void;
   setCustomSystemPrompt: (prompt: string) => void;
   setFetchedGeminiModels: (models: GeminiModelInfo[]) => void;
+  upsertGeminiModelInfo: (modelInfo: GeminiModelInfo) => void;
   setEnabledGeminiModels: (modelIds: string[]) => void;
   toggleGeminiModelEnabled: (modelId: string) => void;
   setDefaultModel: (model: string) => void;
@@ -215,6 +216,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => {
           fetchedGeminiModels,
           enabledGeminiModels: nextEnabled,
         };
+      }),
+
+    upsertGeminiModelInfo: (modelInfo) =>
+      sync((prev) => {
+        const current = prev.fetchedGeminiModels || [];
+        const idx = current.findIndex(
+          (m) => m.id === modelInfo.id || m.name === modelInfo.name
+        );
+        const next =
+          idx >= 0
+            ? current.map((m, i) => (i === idx ? { ...m, ...modelInfo } : m))
+            : [...current, modelInfo];
+        return { fetchedGeminiModels: next };
       }),
 
     setEnabledGeminiModels: (enabledGeminiModels) => sync(() => ({ enabledGeminiModels })),

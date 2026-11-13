@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Copy, Play } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Play } from 'lucide-react';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-javascript';
@@ -65,9 +65,11 @@ function escapeHtml(str: string): string {
 
 export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code }) => {
   const [copied, setCopied] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const openArtifact = useArtifactStore((state) => state.openArtifact);
 
   const { grammar, display, key } = getGrammarAndName(language);
+  const lineCount = React.useMemo(() => code.split('\n').length, [code]);
 
   const highlighted = React.useMemo(() => {
     try {
@@ -106,19 +108,46 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code }) => {
   return (
     <div
       data-testid="code-block"
+      data-collapsed={isCollapsed ? 'true' : 'false'}
       className="code-block my-4 rounded-2xl bg-[#1e1e2e] text-[#cdd6f4] border border-outline-variant/30 overflow-hidden shadow-md"
     >
       {/* Code Block Header */}
       <div
-        className="code-header flex items-center justify-between px-4 py-2 border-b border-white/10 bg-[#181825]/90 text-xs text-[#a6adc8] font-mono select-none"
+        className={`code-header flex items-center justify-between px-4 py-2 bg-[#181825]/90 text-xs text-[#a6adc8] font-mono select-none ${
+          isCollapsed ? '' : 'border-b border-white/10'
+        }`}
       >
-        <span
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            data-testid="toggle-code-collapse-btn"
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? 'Expand code block' : 'Collapse code block'}
+            title={isCollapsed ? 'Expand code' : 'Collapse code'}
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            className="p-1 -ml-1 rounded-md hover:bg-white/10 text-[#a6adc8] hover:text-white transition-colors"
+          >
+            {isCollapsed ? (
+              <ChevronRight className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
 
-          data-testid="code-lang-badge"
-          className="font-medium tracking-wide text-primary-container uppercase text-[11px]"
-        >
-          {display}
-        </span>
+          <span
+            data-testid="code-lang-badge"
+            className="font-medium tracking-wide text-primary-container uppercase text-[11px]"
+          >
+            {display}
+          </span>
+
+          <span
+            data-testid="code-line-count"
+            className="text-[11px] text-[#7f849c] tabular-nums"
+          >
+            {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+          </span>
+        </div>
 
         <div className="flex items-center gap-2">
           {isPreviewable && (
@@ -156,15 +185,18 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code }) => {
       </div>
 
       {/* Code Body */}
-      <pre
-        className="overflow-x-auto p-4 text-sm font-mono leading-relaxed"
-        style={{ overflowX: 'auto' }}
-      >
-        <code
-          className={`language-${key}`}
-          dangerouslySetInnerHTML={{ __html: highlighted }}
-        />
-      </pre>
+      {!isCollapsed && (
+        <pre
+          data-testid="code-block-body"
+          className="overflow-x-auto p-4 text-sm font-mono leading-relaxed"
+          style={{ overflowX: 'auto' }}
+        >
+          <code
+            className={`language-${key}`}
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        </pre>
+      )}
     </div>
   );
 };

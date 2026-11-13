@@ -190,6 +190,96 @@ export async function fetchGeminiModels(
     });
 }
 
+/**
+ * Fetches metadata (including inputTokenLimit and outputTokenLimit) for a specific model
+ * using the Gemini REST API `models.get` endpoint: GET /v1beta/models/{model}.
+ */
+export async function getGeminiModelInfo(params: {
+  model: string;
+  apiKey: string;
+  apiEndpoint?: string;
+  signal?: AbortSignal;
+}): Promise<GeminiModelInfo> {
+  const { model, apiKey, apiEndpoint, signal } = params;
+  if (!apiKey) {
+    throw new Error('Google Gemini API Key is required for models.get.');
+  }
+  const resolvedId = resolveGeminiModelId(model);
+  const base = buildGeminiV1BetaBase(apiEndpoint);
+  const url = `${base}/models/${encodeURIComponent(resolvedId)}?key=${encodeURIComponent(apiKey)}`;
+
+  const res = await fetch(url, { method: 'GET', signal });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `Failed to fetch Gemini model info [HTTP ${res.status}]${detail ? `: ${detail}` : ''}`
+    );
+  }
+
+  const m: RawGeminiModel = await res.json();
+  const id = (m.name || resolvedId).replace(/^models\//, '');
+  return {
+    id,
+    name: m.displayName || id,
+    description: m.description || 'Google Gemini generative model',
+    inputTokenLimit: m.inputTokenLimit,
+    outputTokenLimit: m.outputTokenLimit,
+    supportedGenerationMethods: m.supportedGenerationMethods,
+  };
+}
+
+export interface GeminiCountTokensResult {
+  totalTokens: number;
+  cachedContentTokenCount?: number;
+}
+
+/**
+ * Counts tokens for conversation contents using the Gemini REST API `models.countTokens`
+ * endpoint documented at https://aistudio.google.com/docs/tokens:
+ * POST /v1beta/models/{model}:countTokens
+ */
+export async function countGeminiTokens(params: {
+  model: string;
+  apiKey: string;
+  apiEndpoint?: string;
+  contents: Array<{ role: 'user' | 'model'; parts: GeminiPart[] }>;
+  signal?: AbortSignal;
+}): Promise<GeminiCountTokensResult> {
+  const { model, apiKey, apiEndpoint, contents, signal } = params;
+  if (!apiKey) {
+    throw new Error('Google Gemini API Key is required for countTokens.');
+  }
+  if (!contents || contents.length === 0) {
+    return { totalTokens: 0 };
+  }
+
+  const resolvedId = resolveGeminiModelId(model);
+  const base = buildGeminiV1BetaBase(apiEndpoint);
+  const url = `${base}/models/${encodeURIComponent(resolvedId)}:countTokens?key=${encodeURIComponent(apiKey)}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents }),
+    signal,
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `Failed to count Gemini tokens [HTTP ${res.status}]${detail ? `: ${detail}` : ''}`
+    );
+  }
+
+  const data = await res.json();
+  return {
+    totalTokens: typeof data?.totalTokens === 'number' ? data.totalTokens : 0,
+    ...(typeof data?.cachedContentTokenCount === 'number'
+      ? { cachedContentTokenCount: data.cachedContentTokenCount }
+      : {}),
+  };
+}
+
 // Helper to read SSE or chunked stream line-by-line
 async function readStreamLines(
   response: Response,

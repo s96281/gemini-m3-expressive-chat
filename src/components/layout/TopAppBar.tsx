@@ -19,8 +19,16 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useSettingsStore } from '../../store/useSettingsStore';
 import { useChatStore } from '../../store/useChatStore';
 import { exportSessionToFile } from '../../services/exportService';
-import { computeThreadTokenStats, formatTokenCount } from '../../utils/tokenStats';
-import { resolveGeminiModelId } from '../../services/liveEngine';
+import {
+  buildGeminiContentsFromSession,
+  computeThreadTokenStats,
+  formatTokenCount,
+} from '../../utils/tokenStats';
+import {
+  countGeminiTokens,
+  getGeminiModelInfo,
+  resolveGeminiModelId,
+} from '../../services/liveEngine';
 
 export interface TopAppBarProps {
   title?: string;
@@ -45,8 +53,13 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
 }) => {
   const { mode, resolvedMode, toggleMode } = useTheme();
   const activePersona = useSettingsStore((s) => s.getActivePersona());
+  const engineMode = useSettingsStore((s) => s.engineMode);
+  const apiKey = useSettingsStore((s) => s.apiKey);
+  const apiEndpoint = useSettingsStore((s) => s.apiEndpoint);
   const fetchedGeminiModels = useSettingsStore((s) => s.fetchedGeminiModels);
+  const upsertGeminiModelInfo = useSettingsStore((s) => s.upsertGeminiModelInfo);
   const activeSession = useChatStore((s) => s.getActiveSession());
+  const isStreaming = useChatStore((s) => s.isStreaming);
 
   const hasActiveSession = propHasActiveSession !== undefined ? propHasActiveSession : Boolean(activeSession);
   const handleExportSession = (format: 'md' | 'json' | 'txt' | 'html') => {
@@ -63,21 +76,124 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
   const [isTokenPopoverOpen, setIsTokenPopoverOpen] = useState(false);
   const tokenPopoverRef = useRef<HTMLDivElement>(null);
 
+  const [apiCountTokens, setApiCountTokens] = useState<number | null>(null);
+  const fetchedModelInfoKeysRef = useRef<Set<string>>(new Set());
+
   const tokenStats = useMemo(() => computeThreadTokenStats(activeSession), [activeSession]);
+
+  const rawActiveModel = activeSession?.model || modelName;
+  const resolvedActiveModelId = useMemo(
+    () => resolveGeminiModelId(rawActiveModel),
+    [rawActiveModel]
+  );
 
   const inputTokenLimit = useMemo(() => {
     if (!fetchedGeminiModels || fetchedGeminiModels.length === 0) return undefined;
-    const rawModel = activeSession?.model || modelName;
-    const resolvedId = resolveGeminiModelId(rawModel);
     const match = fetchedGeminiModels.find(
-      (m) => m.id === rawModel || m.id === resolvedId || m.name === rawModel
+      (m) =>
+        m.id === rawActiveModel ||
+        m.id === resolvedActiveModelId ||
+        m.name === rawActiveModel
     );
     return match?.inputTokenLimit;
-  }, [fetchedGeminiModels, activeSession?.model, modelName]);
+  }, [fetchedGeminiModels, rawActiveModel, resolvedActiveModelId]);
+
+  // Fetch exact model context window (inputTokenLimit) via Gemini `models.get`
+  useEffect(() => {
+    if (engineMode !== 'gemini' || !apiKey || !resolvedActiveModelId) return;
+    if (typeof inputTokenLimit === 'number' && inputTokenLimit > 0) return;
+
+    const cacheKey = `${apiEndpoint || 'default'}::${resolvedActiveModelId}`;
+    if (fetchedModelInfoKeysRef.current.has(cacheKey)) return;
+    fetchedModelInfoKeysRef.current.add(cacheKey);
+
+    const controller = new AbortController();
+    getGeminiModelInfo({
+      model: resolvedActiveModelId,
+      apiKey,
+      apiEndpoint,
+      signal: controller.signal,
+    })
+      .then((info) => {
+        if (typeof info.inputTokenLimit === 'number' && info.inputTokenLimit > 0) {
+          upsertGeminiModelInfo(info);
+        }
+      })
+      .catch(() => {
+        // Allow retry if request was aborted
+        if (controller.signal.aborted) {
+          fetchedModelInfoKeysRef.current.delete(cacheKey);
+        }
+      });
+
+    return () => controller.abort();
+  }, [engineMode, apiKey, apiEndpoint, resolvedActiveModelId, inputTokenLimit, upsertGeminiModelInfo]);
+
+  // Count active thread tokens via Gemini `models.countTokens` (per https://aistudio.google.com/docs/tokens)
+  useEffect(() => {
+    if (
+      !hasActiveSession ||
+      !activeSession ||
+      engineMode !== 'gemini' ||
+      !apiKey ||
+      isStreaming ||
+      tokenStats.messageCount === 0
+    ) {
+      setApiCountTokens(null);
+      return;
+    }
+
+    const contents = buildGeminiContentsFromSession(activeSession);
+    if (contents.length === 0) {
+      setApiCountTokens(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    countGeminiTokens({
+      model: resolvedActiveModelId,
+      apiKey,
+      apiEndpoint,
+      contents,
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!controller.signal.aborted && typeof res.totalTokens === 'number' && res.totalTokens > 0) {
+          setApiCountTokens(res.totalTokens);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setApiCountTokens(null);
+        }
+      });
+
+    return () => controller.abort();
+  }, [
+    hasActiveSession,
+    activeSession?.id,
+    activeSession?.activeLeafId,
+    activeSession?.updatedAt,
+    resolvedActiveModelId,
+    engineMode,
+    apiKey,
+    apiEndpoint,
+    isStreaming,
+    tokenStats.messageCount,
+  ]);
+
+  const effectiveContextTokens =
+    apiCountTokens !== null ? apiCountTokens : tokenStats.contextTokens;
+  const effectiveTotalTokens =
+    tokenStats.totalTokens > 0 ? tokenStats.totalTokens : (apiCountTokens ?? 0);
+  const effectivePromptTokens =
+    tokenStats.promptTokens > 0 ? tokenStats.promptTokens : (apiCountTokens ?? 0);
+  const effectiveHasEstimated =
+    apiCountTokens !== null ? false : tokenStats.hasEstimated;
 
   const contextUsagePct =
     inputTokenLimit && inputTokenLimit > 0
-      ? Math.min(100, Math.round((tokenStats.contextTokens / inputTokenLimit) * 1000) / 10)
+      ? Math.min(100, Math.round((effectiveContextTokens / inputTokenLimit) * 1000) / 10)
       : null;
 
   useEffect(() => {
@@ -181,8 +297,8 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
             >
               <Gauge className="w-3.5 h-3.5 text-primary shrink-0" />
               <span>
-                {tokenStats.hasEstimated ? '~' : ''}
-                {formatTokenCount(tokenStats.totalTokens)} tok
+                {effectiveHasEstimated ? '~' : ''}
+                {formatTokenCount(effectiveTotalTokens)} tok
               </span>
             </button>
 
@@ -195,24 +311,28 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
                   <span className="font-semibold text-sm text-on-surface">
                     Thread Token Usage
                   </span>
-                  {tokenStats.hasEstimated && (
+                  {effectiveHasEstimated ? (
                     <span className="px-1.5 py-0.5 rounded-md bg-tertiary-container text-on-tertiary-container text-[10px] font-medium">
                       Estimated
                     </span>
-                  )}
+                  ) : apiCountTokens !== null ? (
+                    <span className="px-1.5 py-0.5 rounded-md bg-primary-container text-on-primary-container text-[10px] font-medium">
+                      API Counted
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2 tabular-nums">
                   <div className="flex items-center justify-between">
                     <span className="text-on-surface-variant">Total Tokens</span>
                     <span className="font-semibold text-on-surface">
-                      {tokenStats.hasEstimated ? '~' : ''}
-                      {formatTokenCount(tokenStats.totalTokens)}
+                      {effectiveHasEstimated ? '~' : ''}
+                      {formatTokenCount(effectiveTotalTokens)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-on-surface-variant">Input (Prompt)</span>
-                    <span>{formatTokenCount(tokenStats.promptTokens)}</span>
+                    <span>{formatTokenCount(effectivePromptTokens)}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-on-surface-variant">Output (Completion)</span>
@@ -227,7 +347,7 @@ export const TopAppBar: React.FC<TopAppBarProps> = ({
                   <div className="flex items-center justify-between pt-2 border-t border-outline-variant/20">
                     <span className="text-on-surface-variant">Current Context</span>
                     <span className="font-medium">
-                      {formatTokenCount(tokenStats.contextTokens)}
+                      {formatTokenCount(effectiveContextTokens)}
                       {inputTokenLimit ? ` / ${formatTokenCount(inputTokenLimit)}` : ''}
                     </span>
                   </div>

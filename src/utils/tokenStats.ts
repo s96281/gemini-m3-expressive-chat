@@ -131,3 +131,57 @@ export function computeThreadTokenStats(session: ChatSession | null): ThreadToke
 export function formatTokenCount(count: number): string {
   return count.toLocaleString('en-US');
 }
+
+/**
+ * Converts the active conversation branch into Gemini REST `contents` format
+ * for accurate token counting via `POST /v1beta/models/{model}:countTokens`.
+ */
+export function buildGeminiContentsFromSession(session: ChatSession | null): Array<{
+  role: 'user' | 'model';
+  parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>;
+}> {
+  if (!session) return [];
+  const timeline = getActiveTimeline(session);
+  const contents: Array<{
+    role: 'user' | 'model';
+    parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>;
+  }> = [];
+
+  for (const msg of timeline) {
+    if (msg.role === 'system') continue;
+    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+
+    if (msg.role === 'user') {
+      if (msg.attachments && msg.attachments.length > 0) {
+        for (const att of msg.attachments) {
+          if (att.textContent !== undefined) {
+            parts.push({
+              text: `[Attached File: ${att.name} (${att.type})]\n\`\`\`\n${att.textContent}\n\`\`\``,
+            });
+          } else if (att.dataBase64) {
+            parts.push({
+              inlineData: {
+                mimeType: att.type || 'application/octet-stream',
+                data: att.dataBase64,
+              },
+            });
+          }
+        }
+      }
+      if (msg.content && msg.content.trim().length > 0) {
+        parts.push({ text: msg.content });
+      }
+    } else if (msg.role === 'assistant' && msg.content && msg.content.trim().length > 0) {
+      parts.push({ text: msg.content });
+    }
+
+    if (parts.length > 0) {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts,
+      });
+    }
+  }
+
+  return contents;
+}
