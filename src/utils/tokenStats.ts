@@ -76,12 +76,15 @@ export function computeThreadTokenStats(session: ChatSession | null): ThreadToke
         }
       }
       runningTextTokens += userEst;
+      contextTokens = runningTextTokens;
       continue;
     }
 
     if (msg.role === 'assistant') {
       if (msg.isContextSummary) {
-        const estSummary = msg.tokenUsage?.completionTokens || estimateTokenCount(msg.content);
+        const estSummary =
+          (msg.tokenUsage?.completionTokens || estimateTokenCount(msg.content)) +
+          (msg.tokenUsage?.thoughtsTokens || estimateTokenCount(msg.reasoningContent || ''));
         if (msg.tokenUsage) {
           promptTokens += msg.tokenUsage.promptTokens;
           completionTokens += msg.tokenUsage.completionTokens;
@@ -110,8 +113,7 @@ export function computeThreadTokenStats(session: ChatSession | null): ThreadToke
         if (msg.tokenUsage.isEstimated) {
           hasEstimated = true;
         }
-        runningTextTokens +=
-          msg.tokenUsage.completionTokens + (msg.tokenUsage.thoughtsTokens || 0);
+        runningTextTokens = msg.tokenUsage.totalTokens;
       } else {
         const estOut = estimateTokenCount(msg.content);
         const estThink = estimateTokenCount(msg.reasoningContent || '');
@@ -156,17 +158,25 @@ export function formatTokenCount(count: number): string {
 /**
  * Converts the active conversation branch into Gemini REST `contents` format
  * for accurate token counting via `POST /v1beta/models/{model}:countTokens`.
- * Starts from the latest compressed context summary if present.
+ * Starts from the latest compressed context summary if present, and preserves
+ * model thinking summaries (`thought: true`) and `thoughtSignature` per
+ * https://aistudio.google.com/docs/thinking?codelanguage=rest#signatures.
  */
 export function buildGeminiContentsFromSession(session: ChatSession | null): Array<{
   role: 'user' | 'model';
-  parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>;
+  parts: Array<
+    | { text: string; thought?: boolean; thoughtSignature?: string }
+    | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
+  >;
 }> {
   if (!session) return [];
   const timeline = getActiveTimeline(session);
   const contents: Array<{
     role: 'user' | 'model';
-    parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>;
+    parts: Array<
+      | { text: string; thought?: boolean; thoughtSignature?: string }
+      | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
+    >;
   }> = [];
 
   let startIndex = 0;
@@ -180,16 +190,27 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
   for (let i = startIndex; i < timeline.length; i++) {
     const msg = timeline[i];
     if (msg.role === 'system') continue;
-    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+    const parts: Array<
+      | { text: string; thought?: boolean; thoughtSignature?: string }
+      | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
+    > = [];
 
     if (msg.isContextSummary && msg.content && msg.content.trim().length > 0) {
       contents.push({
         role: 'user',
         parts: [{ text: 'Summarize this conversation as a handoff briefing.' }],
       });
+      const summaryParts: Array<{ text: string; thought?: boolean; thoughtSignature?: string }> = [];
+      if (msg.reasoningContent && msg.reasoningContent.trim().length > 0) {
+        summaryParts.push({ text: msg.reasoningContent, thought: true });
+      }
+      summaryParts.push({
+        text: msg.content,
+        ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
+      });
       contents.push({
         role: 'model',
-        parts: [{ text: msg.content }],
+        parts: summaryParts,
       });
       continue;
     }
@@ -214,8 +235,22 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
       if (msg.content && msg.content.trim().length > 0) {
         parts.push({ text: msg.content });
       }
-    } else if (msg.role === 'assistant' && msg.content && msg.content.trim().length > 0) {
-      parts.push({ text: msg.content });
+    } else if (msg.role === 'assistant') {
+      if (msg.reasoningContent && msg.reasoningContent.trim().length > 0) {
+        parts.push({
+          text: msg.reasoningContent,
+          thought: true,
+        });
+      }
+      if (
+        (msg.content && msg.content.trim().length > 0) ||
+        (msg.thoughtSignature && msg.thoughtSignature.trim().length > 0)
+      ) {
+        parts.push({
+          text: msg.content || '',
+          ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
+        });
+      }
     }
 
     if (parts.length > 0) {

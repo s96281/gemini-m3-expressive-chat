@@ -10,9 +10,9 @@ import { GeminiModelInfo } from '../types/settings';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { buildGeminiThinkingConfig } from '../utils/thinkingConfig';
 
-type GeminiPart =
-  | { text: string }
-  | { inlineData: { mimeType: string; data: string } };
+export type GeminiPart =
+  | { text: string; thought?: boolean; thoughtSignature?: string }
+  | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string };
 
 export function buildGeminiParts(text: string, attachments?: Attachment[]): GeminiPart[] {
   const parts: GeminiPart[] = [];
@@ -40,6 +40,27 @@ export function buildGeminiParts(text: string, attachments?: Attachment[]): Gemi
     parts.push({ text: '' });
   }
 
+  return parts;
+}
+
+export function buildGeminiModelParts(
+  content: string,
+  reasoningContent?: string,
+  thoughtSignature?: string
+): GeminiPart[] {
+  const parts: GeminiPart[] = [];
+  if (reasoningContent && reasoningContent.trim().length > 0) {
+    parts.push({
+      text: reasoningContent,
+      thought: true,
+    });
+  }
+  if ((content && content.trim().length > 0) || thoughtSignature || parts.length === 0) {
+    parts.push({
+      text: content || '',
+      ...(thoughtSignature ? { thoughtSignature } : {}),
+    });
+  }
   return parts;
 }
 
@@ -385,6 +406,8 @@ export class GeminiEngine implements AIEngine {
         (h) =>
           h.role !== 'system' &&
           ((h.content && h.content.trim().length > 0) ||
+            (h.reasoningContent && h.reasoningContent.trim().length > 0) ||
+            Boolean(h.thoughtSignature) ||
             (h.attachments && h.attachments.length > 0))
       )
       .map((h) => ({
@@ -392,7 +415,7 @@ export class GeminiEngine implements AIEngine {
         parts:
           h.role === 'user'
             ? buildGeminiParts(h.content, h.attachments)
-            : [{ text: h.content }],
+            : buildGeminiModelParts(h.content, h.reasoningContent, h.thoughtSignature),
       }));
 
     const body = {
@@ -433,6 +456,7 @@ export class GeminiEngine implements AIEngine {
 
       let accumulatedContent = '';
       let accumulatedReasoning = '';
+      let accumulatedThoughtSignature = '';
       let thinkingStartTime: number | null = null;
       let thinkingDuration = 0;
       let tokenUsage: TokenUsage | undefined;
@@ -485,6 +509,10 @@ export class GeminiEngine implements AIEngine {
 
           for (const part of parts) {
             if (!part) continue;
+
+            if (typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0) {
+              accumulatedThoughtSignature = part.thoughtSignature;
+            }
 
             if (part.executableCode && typeof part.executableCode.code === 'string') {
               const lang = String(part.executableCode.language || 'python').toLowerCase();
@@ -539,6 +567,11 @@ export class GeminiEngine implements AIEngine {
           ? {
               reasoningContent: accumulatedReasoning,
               thinkingDuration,
+            }
+          : {}),
+        ...(accumulatedThoughtSignature
+          ? {
+              thoughtSignature: accumulatedThoughtSignature,
             }
           : {}),
         ...(tokenUsage ? { tokenUsage } : {}),

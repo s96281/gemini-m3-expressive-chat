@@ -25,6 +25,7 @@ export interface MessageNode {
   role: Role;
   content: string;
   reasoningContent?: string;
+  thoughtSignature?: string;
   thinkingDuration?: number;
   isStreaming?: boolean;
   error?: string;

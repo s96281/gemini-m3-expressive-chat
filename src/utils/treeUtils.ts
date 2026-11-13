@@ -168,6 +168,14 @@ export function sanitizeFilename(title: string): string {
   return title.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
 }
 
+export interface ContextHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+  reasoningContent?: string;
+  thoughtSignature?: string;
+  attachments?: MessageNode['attachments'];
+}
+
 /**
  * Walks upward from a target node (inclusive) to root or the latest context summary node,
  * returning chronological turns for active context or compression.
@@ -176,16 +184,12 @@ export function buildActiveContextHistory(
   session: ChatSession | undefined,
   fromNodeId?: string | null,
   compressionPrompt?: string
-): { role: 'user' | 'assistant'; content: string; attachments?: MessageNode['attachments'] }[] {
+): ContextHistoryTurn[] {
   if (!session) return [];
   const startId = fromNodeId !== undefined ? fromNodeId : session.activeLeafId;
   if (!startId || !session.messages[startId]) return [];
 
-  const history: {
-    role: 'user' | 'assistant';
-    content: string;
-    attachments?: MessageNode['attachments'];
-  }[] = [];
+  const history: ContextHistoryTurn[] = [];
   const visited = new Set<string>();
   let currentId: string | null = startId;
 
@@ -193,6 +197,8 @@ export function buildActiveContextHistory(
     visited.add(currentId);
     const node: MessageNode = session.messages[currentId];
     const hasText = Boolean(node.content && node.content.trim());
+    const hasReasoning = Boolean(node.reasoningContent && node.reasoningContent.trim());
+    const hasSignature = Boolean(node.thoughtSignature && node.thoughtSignature.trim());
     const hasAttachments = Boolean(node.attachments && node.attachments.length > 0);
 
     if (!node.error && node.isContextSummary && hasText) {
@@ -205,12 +211,16 @@ export function buildActiveContextHistory(
           {
             role: 'assistant',
             content: node.content,
+            ...(hasReasoning ? { reasoningContent: node.reasoningContent } : {}),
+            ...(hasSignature ? { thoughtSignature: node.thoughtSignature } : {}),
           }
         );
       } else {
         history.unshift({
           role: 'assistant',
           content: node.content,
+          ...(hasReasoning ? { reasoningContent: node.reasoningContent } : {}),
+          ...(hasSignature ? { thoughtSignature: node.thoughtSignature } : {}),
         });
       }
       break;
@@ -218,12 +228,18 @@ export function buildActiveContextHistory(
 
     if (
       !node.error &&
-      (hasText || hasAttachments) &&
+      (hasText || hasReasoning || hasSignature || hasAttachments) &&
       (node.role === 'user' || node.role === 'assistant')
     ) {
       history.unshift({
         role: node.role,
         content: node.content,
+        ...(node.role === 'assistant' && hasReasoning
+          ? { reasoningContent: node.reasoningContent }
+          : {}),
+        ...(node.role === 'assistant' && hasSignature
+          ? { thoughtSignature: node.thoughtSignature }
+          : {}),
         ...(hasAttachments ? { attachments: node.attachments } : {}),
       });
     }
@@ -241,7 +257,7 @@ export function buildConversationHistory(
   session: ChatSession | undefined,
   assistantNodeId: string,
   compressionPrompt?: string
-): { role: 'user' | 'assistant'; content: string; attachments?: MessageNode['attachments'] }[] {
+): ContextHistoryTurn[] {
   if (!session) return [];
   const assistantNode = session.messages[assistantNodeId];
   if (!assistantNode || !assistantNode.parentId) return [];

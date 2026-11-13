@@ -28,6 +28,7 @@ export interface AddMessagePayload {
   attachments?: Attachment[];
   model?: string;
   reasoningContent?: string;
+  thoughtSignature?: string;
   thinkingDuration?: number;
   isContextSummary?: boolean;
 }
@@ -71,7 +72,8 @@ export interface ChatState {
     finalContent?: string,
     reasoning?: string,
     duration?: number,
-    tokenUsage?: TokenUsage
+    tokenUsage?: TokenUsage,
+    thoughtSignature?: string
   ) => void;
   setMessageError: (sessionId: string, messageId: string, error: string) => void;
   setMessageRating: (
@@ -207,7 +209,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               result.content,
               result.reasoningContent,
               result.thinkingDuration,
-              result.tokenUsage
+              result.tokenUsage,
+              result.thoughtSignature
             );
 
             const embeddingModel = settings.titleEmbeddingModel || 'gemini-embedding-2';
@@ -455,6 +458,9 @@ export const useChatStore = create<ChatState>((set, get) => {
             attachments: payload.attachments || [],
             model: payload.model,
             reasoningContent: payload.reasoningContent,
+            ...(payload.thoughtSignature !== undefined
+              ? { thoughtSignature: payload.thoughtSignature }
+              : {}),
             thinkingDuration: payload.thinkingDuration,
             ...(payload.isContextSummary !== undefined
               ? { isContextSummary: payload.isContextSummary }
@@ -610,7 +616,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       finalContent?: string,
       reasoning?: string,
       duration?: number,
-      tokenUsage?: TokenUsage
+      tokenUsage?: TokenUsage,
+      thoughtSignature?: string
     ) => {
       set((state) => {
         const nextSessions = state.sessions.map((session) => {
@@ -622,6 +629,11 @@ export const useChatStore = create<ChatState>((set, get) => {
             content: finalContent !== undefined ? finalContent : existingNode.content,
             reasoningContent:
               reasoning !== undefined ? reasoning : existingNode.reasoningContent,
+            ...(thoughtSignature !== undefined
+              ? { thoughtSignature }
+              : existingNode.thoughtSignature !== undefined
+                ? { thoughtSignature: existingNode.thoughtSignature }
+                : {}),
             thinkingDuration:
               duration !== undefined ? duration : existingNode.thinkingDuration,
             ...(tokenUsage !== undefined ? { tokenUsage } : {}),
@@ -903,7 +915,8 @@ export const useChatStore = create<ChatState>((set, get) => {
                 result.content,
                 result.reasoningContent,
                 result.thinkingDuration,
-                result.tokenUsage
+                result.tokenUsage,
+                result.thoughtSignature
               );
             },
             onError: (err) => {

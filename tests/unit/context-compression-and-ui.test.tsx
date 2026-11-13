@@ -6,7 +6,10 @@ import {
   shouldAutoCompressSession,
 } from '../../src/utils/contextCompression';
 import { buildConversationHistory } from '../../src/utils/treeUtils';
-import { computeThreadTokenStats } from '../../src/utils/tokenStats';
+import {
+  buildGeminiContentsFromSession,
+  computeThreadTokenStats,
+} from '../../src/utils/tokenStats';
 import { useChatStore } from '../../src/store/useChatStore';
 import { useSettingsStore } from '../../src/store/useSettingsStore';
 import { ThinkingAccordion } from '../../src/components/conversation/ThinkingAccordion';
@@ -306,4 +309,138 @@ describe('Context Compression, CodeBlock Scroll Persistence & Default Collapsed 
       });
     });
   });
+
+  describe('4. Thinking Process & Thought Signatures in Multi-turn Context & Token Counting', () => {
+    it('captures thoughtSignature and reasoningContent from Gemini SSE and includes them in subsequent turn requests and countTokens contents', async () => {
+      useSettingsStore.getState().updateSettings({
+        engineMode: 'gemini',
+        apiKey: 'AIzaTestKey',
+        titleEmbeddingModel: 'off',
+        thinkingPreset: 'high',
+      });
+
+      const fetchMock = vi
+        .fn()
+        // Turn 1 response with thought part and thoughtSignature
+        .mockResolvedValueOnce({
+          ok: true,
+          body: createSSEStream([
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text: 'Let us factor the quadratic equation first.',
+                        thought: true,
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}\n\n`,
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text: 'The roots are x = 2 and x = 3.',
+                        thoughtSignature: 'Em8KSignatureBase64XYZ==',
+                      },
+                    ],
+                  },
+                },
+              ],
+              usageMetadata: {
+                promptTokenCount: 15,
+                candidatesTokenCount: 12,
+                thoughtsTokenCount: 45,
+                totalTokenCount: 72,
+              },
+            })}\n\n`,
+          ]),
+        })
+        // Turn 2 response
+        .mockResolvedValueOnce({
+          ok: true,
+          body: createSSEStream([
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text: 'Substituting x = 2 gives 4 - 10 + 6 = 0.',
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}\n\n`,
+          ]),
+        });
+
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await useChatStore.getState().sendChatMessage('Solve x^2 - 5x + 6 = 0');
+
+      const sessionAfterTurn1 = useChatStore.getState().getActiveSession()!;
+      const assistantTurn1 = sessionAfterTurn1.messages[sessionAfterTurn1.activeLeafId!];
+      expect(assistantTurn1.reasoningContent).toBe('Let us factor the quadratic equation first.');
+      expect(assistantTurn1.thoughtSignature).toBe('Em8KSignatureBase64XYZ==');
+
+      // Verify buildGeminiContentsFromSession (used by countTokens) includes both thought part and thoughtSignature
+      const countTokensContents = buildGeminiContentsFromSession(sessionAfterTurn1);
+      expect(countTokensContents).toEqual([
+        {
+          role: 'user',
+          parts: [{ text: 'Solve x^2 - 5x + 6 = 0' }],
+        },
+        {
+          role: 'model',
+          parts: [
+            {
+              text: 'Let us factor the quadratic equation first.',
+              thought: true,
+            },
+            {
+              text: 'The roots are x = 2 and x = 3.',
+              thoughtSignature: 'Em8KSignatureBase64XYZ==',
+            },
+          ],
+        },
+      ]);
+
+      // Verify Turn 2 request includes Turn 1's thought part and thoughtSignature in contents
+      await useChatStore.getState().sendChatMessage('Verify the first root');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      const turn2Body = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
+      expect(turn2Body.contents).toEqual([
+        {
+          role: 'user',
+          parts: [{ text: 'Solve x^2 - 5x + 6 = 0' }],
+        },
+        {
+          role: 'model',
+          parts: [
+            {
+              text: 'Let us factor the quadratic equation first.',
+              thought: true,
+            },
+            {
+              text: 'The roots are x = 2 and x = 3.',
+              thoughtSignature: 'Em8KSignatureBase64XYZ==',
+            },
+          ],
+        },
+        {
+          role: 'user',
+          parts: [{ text: 'Verify the first root' }],
+        },
+      ]);
+    });
+  });
 });
+

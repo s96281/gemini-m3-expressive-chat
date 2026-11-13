@@ -8,7 +8,13 @@ import {
 
 export interface StreamRequest {
   prompt: string;
-  history?: { role: 'user' | 'assistant' | 'system'; content: string; attachments?: Attachment[] }[];
+  history?: {
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    reasoningContent?: string;
+    thoughtSignature?: string;
+    attachments?: Attachment[];
+  }[];
   systemPrompt?: string;
   personaName?: string;
   model?: string;
@@ -26,6 +32,7 @@ export interface StreamRequest {
 export interface StreamResult {
   content: string;
   reasoningContent?: string;
+  thoughtSignature?: string;
   thinkingDuration?: number;
   tokenUsage?: TokenUsage;
 }

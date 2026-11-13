@@ -190,7 +190,13 @@ describe('Multi-turn conversation history & Gemini thought: true support', () =>
     const secondBody = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
     expect(secondBody.contents).toEqual([
       { role: 'user', parts: [{ text: 'I am Bob' }] },
-      { role: 'model', parts: [{ text: 'Hi Bob!' }] },
+      {
+        role: 'model',
+        parts: [
+          { text: 'Greeting user.', thought: true },
+          { text: 'Hi Bob!' },
+        ],
+      },
       { role: 'user', parts: [{ text: 'Who am I?' }] },
     ]);
 
