@@ -159,13 +159,13 @@ export function formatTokenCount(count: number): string {
  * Converts the active conversation branch into Gemini REST `contents` format
  * for accurate token counting via `POST /v1beta/models/{model}:countTokens`.
  * Starts from the latest compressed context summary if present, and preserves
- * model thinking summaries (`thought: true`) and `thoughtSignature` per
+ * `thoughtSignature` on model response parts per
  * https://aistudio.google.com/docs/thinking?codelanguage=rest#signatures.
  */
 export function buildGeminiContentsFromSession(session: ChatSession | null): Array<{
   role: 'user' | 'model';
   parts: Array<
-    | { text: string; thought?: boolean; thoughtSignature?: string }
+    | { text: string; thoughtSignature?: string }
     | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
   >;
 }> {
@@ -174,7 +174,7 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
   const contents: Array<{
     role: 'user' | 'model';
     parts: Array<
-      | { text: string; thought?: boolean; thoughtSignature?: string }
+      | { text: string; thoughtSignature?: string }
       | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
     >;
   }> = [];
@@ -191,7 +191,7 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
     const msg = timeline[i];
     if (msg.role === 'system') continue;
     const parts: Array<
-      | { text: string; thought?: boolean; thoughtSignature?: string }
+      | { text: string; thoughtSignature?: string }
       | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
     > = [];
 
@@ -200,17 +200,14 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
         role: 'user',
         parts: [{ text: 'Summarize this conversation as a handoff briefing.' }],
       });
-      const summaryParts: Array<{ text: string; thought?: boolean; thoughtSignature?: string }> = [];
-      if (msg.reasoningContent && msg.reasoningContent.trim().length > 0) {
-        summaryParts.push({ text: msg.reasoningContent, thought: true });
-      }
-      summaryParts.push({
-        text: msg.content,
-        ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
-      });
       contents.push({
         role: 'model',
-        parts: summaryParts,
+        parts: [
+          {
+            text: msg.content,
+            ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
+          },
+        ],
       });
       continue;
     }
@@ -235,22 +232,15 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
       if (msg.content && msg.content.trim().length > 0) {
         parts.push({ text: msg.content });
       }
-    } else if (msg.role === 'assistant') {
-      if (msg.reasoningContent && msg.reasoningContent.trim().length > 0) {
-        parts.push({
-          text: msg.reasoningContent,
-          thought: true,
-        });
-      }
-      if (
-        (msg.content && msg.content.trim().length > 0) ||
-        (msg.thoughtSignature && msg.thoughtSignature.trim().length > 0)
-      ) {
-        parts.push({
-          text: msg.content || '',
-          ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
-        });
-      }
+    } else if (
+      msg.role === 'assistant' &&
+      ((msg.content && msg.content.trim().length > 0) ||
+        (msg.thoughtSignature && msg.thoughtSignature.trim().length > 0))
+    ) {
+      parts.push({
+        text: msg.content || '',
+        ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
+      });
     }
 
     if (parts.length > 0) {

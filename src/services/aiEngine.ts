@@ -11,7 +11,6 @@ export interface StreamRequest {
   history?: {
     role: 'user' | 'assistant' | 'system';
     content: string;
-    reasoningContent?: string;
     thoughtSignature?: string;
     attachments?: Attachment[];
   }[];

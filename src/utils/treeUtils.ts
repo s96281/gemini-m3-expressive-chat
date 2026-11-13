@@ -171,7 +171,6 @@ export function sanitizeFilename(title: string): string {
 export interface ContextHistoryTurn {
   role: 'user' | 'assistant';
   content: string;
-  reasoningContent?: string;
   thoughtSignature?: string;
   attachments?: MessageNode['attachments'];
 }
@@ -197,7 +196,6 @@ export function buildActiveContextHistory(
     visited.add(currentId);
     const node: MessageNode = session.messages[currentId];
     const hasText = Boolean(node.content && node.content.trim());
-    const hasReasoning = Boolean(node.reasoningContent && node.reasoningContent.trim());
     const hasSignature = Boolean(node.thoughtSignature && node.thoughtSignature.trim());
     const hasAttachments = Boolean(node.attachments && node.attachments.length > 0);
 
@@ -211,7 +209,6 @@ export function buildActiveContextHistory(
           {
             role: 'assistant',
             content: node.content,
-            ...(hasReasoning ? { reasoningContent: node.reasoningContent } : {}),
             ...(hasSignature ? { thoughtSignature: node.thoughtSignature } : {}),
           }
         );
@@ -219,7 +216,6 @@ export function buildActiveContextHistory(
         history.unshift({
           role: 'assistant',
           content: node.content,
-          ...(hasReasoning ? { reasoningContent: node.reasoningContent } : {}),
           ...(hasSignature ? { thoughtSignature: node.thoughtSignature } : {}),
         });
       }
@@ -228,15 +224,12 @@ export function buildActiveContextHistory(
 
     if (
       !node.error &&
-      (hasText || hasReasoning || hasSignature || hasAttachments) &&
+      (hasText || hasSignature || hasAttachments) &&
       (node.role === 'user' || node.role === 'assistant')
     ) {
       history.unshift({
         role: node.role,
         content: node.content,
-        ...(node.role === 'assistant' && hasReasoning
-          ? { reasoningContent: node.reasoningContent }
-          : {}),
         ...(node.role === 'assistant' && hasSignature
           ? { thoughtSignature: node.thoughtSignature }
           : {}),

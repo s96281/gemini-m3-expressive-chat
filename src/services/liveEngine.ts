@@ -11,7 +11,7 @@ import { useSettingsStore } from '../store/useSettingsStore';
 import { buildGeminiThinkingConfig } from '../utils/thinkingConfig';
 
 export type GeminiPart =
-  | { text: string; thought?: boolean; thoughtSignature?: string }
+  | { text: string; thoughtSignature?: string }
   | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string };
 
 export function buildGeminiParts(text: string, attachments?: Attachment[]): GeminiPart[] {
@@ -45,23 +45,14 @@ export function buildGeminiParts(text: string, attachments?: Attachment[]): Gemi
 
 export function buildGeminiModelParts(
   content: string,
-  reasoningContent?: string,
   thoughtSignature?: string
 ): GeminiPart[] {
-  const parts: GeminiPart[] = [];
-  if (reasoningContent && reasoningContent.trim().length > 0) {
-    parts.push({
-      text: reasoningContent,
-      thought: true,
-    });
-  }
-  if ((content && content.trim().length > 0) || thoughtSignature || parts.length === 0) {
-    parts.push({
+  return [
+    {
       text: content || '',
       ...(thoughtSignature ? { thoughtSignature } : {}),
-    });
-  }
-  return parts;
+    },
+  ];
 }
 
 export function buildOpenAIMessageContent(
@@ -406,7 +397,6 @@ export class GeminiEngine implements AIEngine {
         (h) =>
           h.role !== 'system' &&
           ((h.content && h.content.trim().length > 0) ||
-            (h.reasoningContent && h.reasoningContent.trim().length > 0) ||
             Boolean(h.thoughtSignature) ||
             (h.attachments && h.attachments.length > 0))
       )
@@ -415,7 +405,7 @@ export class GeminiEngine implements AIEngine {
         parts:
           h.role === 'user'
             ? buildGeminiParts(h.content, h.attachments)
-            : buildGeminiModelParts(h.content, h.reasoningContent, h.thoughtSignature),
+            : buildGeminiModelParts(h.content, h.thoughtSignature),
       }));
 
     const body = {

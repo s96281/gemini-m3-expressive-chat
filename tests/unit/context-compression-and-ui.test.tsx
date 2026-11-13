@@ -390,7 +390,7 @@ describe('Context Compression, CodeBlock Scroll Persistence & Default Collapsed 
       expect(assistantTurn1.reasoningContent).toBe('Let us factor the quadratic equation first.');
       expect(assistantTurn1.thoughtSignature).toBe('Em8KSignatureBase64XYZ==');
 
-      // Verify buildGeminiContentsFromSession (used by countTokens) includes both thought part and thoughtSignature
+      // Verify buildGeminiContentsFromSession (used by countTokens) includes thoughtSignature without plain-text thought summary
       const countTokensContents = buildGeminiContentsFromSession(sessionAfterTurn1);
       expect(countTokensContents).toEqual([
         {
@@ -401,10 +401,6 @@ describe('Context Compression, CodeBlock Scroll Persistence & Default Collapsed 
           role: 'model',
           parts: [
             {
-              text: 'Let us factor the quadratic equation first.',
-              thought: true,
-            },
-            {
               text: 'The roots are x = 2 and x = 3.',
               thoughtSignature: 'Em8KSignatureBase64XYZ==',
             },
@@ -412,7 +408,7 @@ describe('Context Compression, CodeBlock Scroll Persistence & Default Collapsed 
         },
       ]);
 
-      // Verify Turn 2 request includes Turn 1's thought part and thoughtSignature in contents
+      // Verify Turn 2 request includes Turn 1's thoughtSignature (and does NOT stuff plain-text reasoningContent into contents)
       await useChatStore.getState().sendChatMessage('Verify the first root');
       expect(fetchMock).toHaveBeenCalledTimes(2);
 
@@ -425,10 +421,6 @@ describe('Context Compression, CodeBlock Scroll Persistence & Default Collapsed 
         {
           role: 'model',
           parts: [
-            {
-              text: 'Let us factor the quadratic equation first.',
-              thought: true,
-            },
             {
               text: 'The roots are x = 2 and x = 3.',
               thoughtSignature: 'Em8KSignatureBase64XYZ==',
