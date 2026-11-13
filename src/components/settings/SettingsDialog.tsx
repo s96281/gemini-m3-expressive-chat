@@ -240,7 +240,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   return (
     <div
       data-testid="settings-dialog-backdrop"
-      className="modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in"
+      className="modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-hidden animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -347,7 +347,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         </div>
 
         {/* Tab Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 space-y-6">
           {/* TAB 1: GENERAL (Appearance & Generation Hyperparameters) */}
           {activeTab === 'general' && (
             <div className="space-y-6">
@@ -824,7 +824,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
                       <div
                         data-testid="gemini-models-list"
-                        className="max-h-60 overflow-y-auto space-y-1.5 pr-1"
+                        className="max-h-60 overflow-y-auto overscroll-contain space-y-1.5 pr-1"
                       >
                         {fetchedGeminiModels
                           .filter((m) => {
@@ -848,7 +848,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                               <label
                                 key={model.id}
                                 data-testid={`gemini-model-item-${model.id}`}
-                                className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                className={`relative flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
                                   isChecked
                                     ? 'bg-primary-container/15 border-primary/50'
                                     : 'bg-surface border-outline-variant/30 hover:bg-surface-container-highest/40'

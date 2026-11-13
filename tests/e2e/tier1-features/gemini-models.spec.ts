@@ -656,4 +656,54 @@ test.describe('Google Gemini /v1beta/models/ API & Chat Model Selection', () => 
     await expect(popover).toContainText('80');
     await expect(popover).toContainText('40');
   });
+
+  test('keeps gemini-models-list bounded and prevents body scroll when many models are loaded', async ({
+    page,
+  }) => {
+    const manyModels = Array.from({ length: 20 }, (_, i) => ({
+      name: `models/gemini-test-${i + 1}`,
+      displayName: `Gemini Test Model ${i + 1}`,
+      description: `Test model number ${i + 1} for scroll containment`,
+      inputTokenLimit: 1048576,
+      supportedGenerationMethods: ['generateContent'],
+    }));
+
+    await page.route('**/v1beta/models*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ models: manyModels }),
+      });
+    });
+
+    await page.locator('[data-testid="settings-btn"]').first().click();
+    await page.locator('[data-testid="tab-engine"]').click();
+    await page.locator('[data-testid="engine-option-gemini"]').click();
+    await page.locator('[data-testid="api-key-input"]').fill('AIzaTestMockKey12345');
+    await page.locator('[data-testid="fetch-gemini-models-btn"]').click();
+
+    const list = page.locator('[data-testid="gemini-models-list"]');
+    await expect(list).toBeVisible();
+
+    const metrics = await list.evaluate((el) => ({
+      clientHeight: el.clientHeight,
+      scrollHeight: el.scrollHeight,
+      bodyScrollTop: document.body.scrollTop,
+      docScrollTop: document.documentElement.scrollTop,
+    }));
+
+    expect(metrics.clientHeight).toBeLessThanOrEqual(245);
+    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+    expect(metrics.bodyScrollTop).toBe(0);
+    expect(metrics.docScrollTop).toBe(0);
+
+    // Click a model item inside the list and verify document body still does not scroll
+    await page.locator('[data-testid="gemini-model-item-gemini-test-10"]').click();
+    const afterClick = await page.evaluate(() => ({
+      bodyScrollTop: document.body.scrollTop,
+      docScrollTop: document.documentElement.scrollTop,
+    }));
+    expect(afterClick.bodyScrollTop).toBe(0);
+    expect(afterClick.docScrollTop).toBe(0);
+  });
 });
