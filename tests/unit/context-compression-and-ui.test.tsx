@@ -433,6 +433,231 @@ describe('Context Compression, CodeBlock Scroll Persistence & Default Collapsed 
         },
       ]);
     });
+
+    it('falls back to including thought summary ({ thought: true, text }) in contents when thoughtSignature is absent (e.g. Gemma models)', async () => {
+      useSettingsStore.getState().updateSettings({
+        engineMode: 'gemini',
+        apiKey: 'AIzaTestKey',
+        titleEmbeddingModel: 'off',
+        thinkingPreset: 'high',
+      });
+
+      const fetchMock = vi
+        .fn()
+        // Turn 1 response from Gemma: returns thought: true and text, but NO thoughtSignature
+        .mockResolvedValueOnce({
+          ok: true,
+          body: createSSEStream([
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text: 'Gemma internal reasoning step 1.',
+                        thought: true,
+                      },
+                      {
+                        text: 'Gemma final answer.',
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}\n\n`,
+          ]),
+        })
+        // Turn 2 response
+        .mockResolvedValueOnce({
+          ok: true,
+          body: createSSEStream([
+            `data: ${JSON.stringify({
+              candidates: [{ content: { parts: [{ text: 'Follow-up answer.' }] } }],
+            })}\n\n`,
+          ]),
+        });
+
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await useChatStore.getState().sendChatMessage('Question for Gemma');
+
+      const sessionAfterTurn1 = useChatStore.getState().getActiveSession()!;
+      const assistantTurn1 = sessionAfterTurn1.messages[sessionAfterTurn1.activeLeafId!];
+      expect(assistantTurn1.reasoningContent).toBe('Gemma internal reasoning step 1.');
+      expect(assistantTurn1.thoughtSignature).toBeUndefined();
+
+      // Verify countTokens contents falls back to including { text, thought: true }
+      expect(buildGeminiContentsFromSession(sessionAfterTurn1)).toEqual([
+        {
+          role: 'user',
+          parts: [{ text: 'Question for Gemma' }],
+        },
+        {
+          role: 'model',
+          parts: [
+            { text: 'Gemma internal reasoning step 1.', thought: true },
+            { text: 'Gemma final answer.' },
+          ],
+        },
+      ]);
+
+      await useChatStore.getState().sendChatMessage('Next question for Gemma');
+      const turn2Body = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
+      expect(turn2Body.contents).toEqual([
+        {
+          role: 'user',
+          parts: [{ text: 'Question for Gemma' }],
+        },
+        {
+          role: 'model',
+          parts: [
+            { text: 'Gemma internal reasoning step 1.', thought: true },
+            { text: 'Gemma final answer.' },
+          ],
+        },
+        {
+          role: 'user',
+          parts: [{ text: 'Next question for Gemma' }],
+        },
+      ]);
+    });
+
+    it('preserves structured executableCode and codeExecutionResult parts when Google API tools are enabled', async () => {
+      useSettingsStore.getState().updateSettings({
+        engineMode: 'gemini',
+        apiKey: 'AIzaTestKey',
+        titleEmbeddingModel: 'off',
+        geminiTools: {
+          googleSearch: false,
+          codeExecution: true,
+          urlContext: false,
+        },
+      });
+
+      const fetchMock = vi
+        .fn()
+        // Turn 1: model emits executableCode (with thoughtSignature), codeExecutionResult, and text
+        .mockResolvedValueOnce({
+          ok: true,
+          body: createSSEStream([
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        executableCode: {
+                          language: 'PYTHON',
+                          code: 'print(sum(range(1, 11)))',
+                        },
+                        thoughtSignature: 'SigOnExecCode123==',
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}\n\n`,
+            `data: ${JSON.stringify({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        codeExecutionResult: {
+                          outcome: 'OUTCOME_OK',
+                          output: '55\n',
+                        },
+                      },
+                      {
+                        text: 'The sum from 1 to 10 is 55.',
+                        thoughtSignature: 'SigOnFinalText456==',
+                      },
+                    ],
+                  },
+                },
+              ],
+            })}\n\n`,
+          ]),
+        })
+        // Turn 2
+        .mockResolvedValueOnce({
+          ok: true,
+          body: createSSEStream([
+            `data: ${JSON.stringify({
+              candidates: [{ content: { parts: [{ text: 'Now for 1 to 100 it is 5050.' }] } }],
+            })}\n\n`,
+          ]),
+        });
+
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await useChatStore.getState().sendChatMessage('Compute sum of 1..10 using Python');
+
+      const sessionAfterTurn1 = useChatStore.getState().getActiveSession()!;
+      const assistantTurn1 = sessionAfterTurn1.messages[sessionAfterTurn1.activeLeafId!];
+
+      // UI content includes formatted code block and execution output
+      expect(assistantTurn1.content).toContain('```python\nprint(sum(range(1, 11)))\n```');
+      expect(assistantTurn1.content).toContain('**Execution Output:**\n```text\n55\n```');
+      expect(assistantTurn1.content).toContain('The sum from 1 to 10 is 55.');
+
+      // Structured modelParts are preserved for subsequent API calls and countTokens
+      expect(assistantTurn1.modelParts).toEqual([
+        {
+          executableCode: {
+            language: 'PYTHON',
+            code: 'print(sum(range(1, 11)))',
+          },
+          thoughtSignature: 'SigOnExecCode123==',
+        },
+        {
+          codeExecutionResult: {
+            outcome: 'OUTCOME_OK',
+            output: '55\n',
+          },
+        },
+        {
+          text: 'The sum from 1 to 10 is 55.',
+          thoughtSignature: 'SigOnFinalText456==',
+        },
+      ]);
+
+      await useChatStore.getState().sendChatMessage('What about 1..100?');
+      const turn2Body = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
+      expect(turn2Body.contents).toEqual([
+        {
+          role: 'user',
+          parts: [{ text: 'Compute sum of 1..10 using Python' }],
+        },
+        {
+          role: 'model',
+          parts: [
+            {
+              executableCode: {
+                language: 'PYTHON',
+                code: 'print(sum(range(1, 11)))',
+              },
+              thoughtSignature: 'SigOnExecCode123==',
+            },
+            {
+              codeExecutionResult: {
+                outcome: 'OUTCOME_OK',
+                output: '55\n',
+              },
+            },
+            {
+              text: 'The sum from 1 to 10 is 55.',
+              thoughtSignature: 'SigOnFinalText456==',
+            },
+          ],
+        },
+        {
+          role: 'user',
+          parts: [{ text: 'What about 1..100?' }],
+        },
+      ]);
+    });
   });
 });
+
 

@@ -171,7 +171,9 @@ export function sanitizeFilename(title: string): string {
 export interface ContextHistoryTurn {
   role: 'user' | 'assistant';
   content: string;
+  reasoningContent?: string;
   thoughtSignature?: string;
+  modelParts?: MessageNode['modelParts'];
   attachments?: MessageNode['attachments'];
 }
 
@@ -196,7 +198,9 @@ export function buildActiveContextHistory(
     visited.add(currentId);
     const node: MessageNode = session.messages[currentId];
     const hasText = Boolean(node.content && node.content.trim());
+    const hasReasoning = Boolean(node.reasoningContent && node.reasoningContent.trim());
     const hasSignature = Boolean(node.thoughtSignature && node.thoughtSignature.trim());
+    const hasModelParts = Boolean(node.modelParts && node.modelParts.length > 0);
     const hasAttachments = Boolean(node.attachments && node.attachments.length > 0);
 
     if (!node.error && node.isContextSummary && hasText) {
@@ -209,14 +213,18 @@ export function buildActiveContextHistory(
           {
             role: 'assistant',
             content: node.content,
+            ...(hasReasoning ? { reasoningContent: node.reasoningContent } : {}),
             ...(hasSignature ? { thoughtSignature: node.thoughtSignature } : {}),
+            ...(hasModelParts ? { modelParts: node.modelParts } : {}),
           }
         );
       } else {
         history.unshift({
           role: 'assistant',
           content: node.content,
+          ...(hasReasoning ? { reasoningContent: node.reasoningContent } : {}),
           ...(hasSignature ? { thoughtSignature: node.thoughtSignature } : {}),
+          ...(hasModelParts ? { modelParts: node.modelParts } : {}),
         });
       }
       break;
@@ -224,14 +232,20 @@ export function buildActiveContextHistory(
 
     if (
       !node.error &&
-      (hasText || hasSignature || hasAttachments) &&
+      (hasText || hasReasoning || hasSignature || hasModelParts || hasAttachments) &&
       (node.role === 'user' || node.role === 'assistant')
     ) {
       history.unshift({
         role: node.role,
         content: node.content,
+        ...(node.role === 'assistant' && hasReasoning
+          ? { reasoningContent: node.reasoningContent }
+          : {}),
         ...(node.role === 'assistant' && hasSignature
           ? { thoughtSignature: node.thoughtSignature }
+          : {}),
+        ...(node.role === 'assistant' && hasModelParts
+          ? { modelParts: node.modelParts }
           : {}),
         ...(hasAttachments ? { attachments: node.attachments } : {}),
       });

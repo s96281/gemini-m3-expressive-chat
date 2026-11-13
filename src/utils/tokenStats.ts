@@ -1,4 +1,4 @@
-import { ChatSession } from '../types/chat';
+import { ChatSession, GeminiModelPart } from '../types/chat';
 import { getActiveTimeline } from './treeUtils';
 
 export interface ThreadTokenStats {
@@ -164,19 +164,13 @@ export function formatTokenCount(count: number): string {
  */
 export function buildGeminiContentsFromSession(session: ChatSession | null): Array<{
   role: 'user' | 'model';
-  parts: Array<
-    | { text: string; thoughtSignature?: string }
-    | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
-  >;
+  parts: GeminiModelPart[];
 }> {
   if (!session) return [];
   const timeline = getActiveTimeline(session);
   const contents: Array<{
     role: 'user' | 'model';
-    parts: Array<
-      | { text: string; thoughtSignature?: string }
-      | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
-    >;
+    parts: GeminiModelPart[];
   }> = [];
 
   let startIndex = 0;
@@ -190,24 +184,27 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
   for (let i = startIndex; i < timeline.length; i++) {
     const msg = timeline[i];
     if (msg.role === 'system') continue;
-    const parts: Array<
-      | { text: string; thoughtSignature?: string }
-      | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string }
-    > = [];
+    const parts: GeminiModelPart[] = [];
 
     if (msg.isContextSummary && msg.content && msg.content.trim().length > 0) {
       contents.push({
         role: 'user',
         parts: [{ text: 'Summarize this conversation as a handoff briefing.' }],
       });
+      const summaryParts: GeminiModelPart[] = [];
+      if (!msg.thoughtSignature && msg.reasoningContent && msg.reasoningContent.trim().length > 0) {
+        summaryParts.push({
+          text: msg.reasoningContent,
+          thought: true,
+        });
+      }
+      summaryParts.push({
+        text: msg.content,
+        ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
+      });
       contents.push({
         role: 'model',
-        parts: [
-          {
-            text: msg.content,
-            ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
-          },
-        ],
+        parts: summaryParts,
       });
       continue;
     }
@@ -232,15 +229,53 @@ export function buildGeminiContentsFromSession(session: ChatSession | null): Arr
       if (msg.content && msg.content.trim().length > 0) {
         parts.push({ text: msg.content });
       }
-    } else if (
-      msg.role === 'assistant' &&
-      ((msg.content && msg.content.trim().length > 0) ||
-        (msg.thoughtSignature && msg.thoughtSignature.trim().length > 0))
-    ) {
-      parts.push({
-        text: msg.content || '',
-        ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
-      });
+    } else if (msg.role === 'assistant') {
+      const hasSignature = Boolean(
+        (msg.thoughtSignature && msg.thoughtSignature.trim().length > 0) ||
+          msg.modelParts?.some((p) => p.thoughtSignature && p.thoughtSignature.trim().length > 0)
+      );
+
+      if (!hasSignature && msg.reasoningContent && msg.reasoningContent.trim().length > 0) {
+        parts.push({
+          text: msg.reasoningContent,
+          thought: true,
+        });
+      }
+
+      const hasStructuredModelParts = Boolean(
+        msg.modelParts &&
+          msg.modelParts.length > 0 &&
+          (msg.modelParts.length > 1 ||
+            msg.modelParts.some(
+              (p) =>
+                Boolean(p.executableCode) ||
+                Boolean(p.codeExecutionResult) ||
+                Boolean(p.functionCall) ||
+                Boolean(p.inlineData)
+            ))
+      );
+
+      if (hasStructuredModelParts && msg.modelParts) {
+        const cloned = msg.modelParts.map((p) => ({ ...p }));
+        const anyPartHasSig = cloned.some(
+          (p) => p.thoughtSignature && p.thoughtSignature.trim().length > 0
+        );
+        if (!anyPartHasSig && msg.thoughtSignature && cloned.length > 0) {
+          cloned[cloned.length - 1] = {
+            ...cloned[cloned.length - 1],
+            thoughtSignature: msg.thoughtSignature,
+          };
+        }
+        parts.push(...cloned);
+      } else if (
+        (msg.content && msg.content.trim().length > 0) ||
+        (msg.thoughtSignature && msg.thoughtSignature.trim().length > 0)
+      ) {
+        parts.push({
+          text: msg.content || '',
+          ...(msg.thoughtSignature ? { thoughtSignature: msg.thoughtSignature } : {}),
+        });
+      }
     }
 
     if (parts.length > 0) {

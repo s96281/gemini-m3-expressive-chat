@@ -18,6 +18,34 @@ export interface TokenUsage {
   isEstimated?: boolean;
 }
 
+export interface GeminiExecutableCode {
+  language: string;
+  code: string;
+}
+
+export interface GeminiCodeExecutionResult {
+  outcome: string;
+  output?: string;
+}
+
+export interface GeminiFunctionCall {
+  name: string;
+  args?: Record<string, unknown>;
+}
+
+export interface GeminiModelPart {
+  text?: string;
+  thought?: boolean;
+  thoughtSignature?: string;
+  executableCode?: GeminiExecutableCode;
+  codeExecutionResult?: GeminiCodeExecutionResult;
+  functionCall?: GeminiFunctionCall;
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
+}
+
 export interface MessageNode {
   id: string;
   parentId: string | null;
@@ -26,6 +54,7 @@ export interface MessageNode {
   content: string;
   reasoningContent?: string;
   thoughtSignature?: string;
+  modelParts?: GeminiModelPart[];
   thinkingDuration?: number;
   isStreaming?: boolean;
   error?: string;

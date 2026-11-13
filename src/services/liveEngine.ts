@@ -5,14 +5,12 @@ import {
   StreamRequest,
   StreamResult,
 } from './aiEngine';
-import { Attachment, TokenUsage } from '../types/chat';
+import { Attachment, GeminiModelPart, TokenUsage } from '../types/chat';
 import { GeminiModelInfo } from '../types/settings';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { buildGeminiThinkingConfig } from '../utils/thinkingConfig';
 
-export type GeminiPart =
-  | { text: string; thoughtSignature?: string }
-  | { inlineData: { mimeType: string; data: string }; thoughtSignature?: string };
+export type GeminiPart = GeminiModelPart;
 
 export function buildGeminiParts(text: string, attachments?: Attachment[]): GeminiPart[] {
   const parts: GeminiPart[] = [];
@@ -45,14 +43,61 @@ export function buildGeminiParts(text: string, attachments?: Attachment[]): Gemi
 
 export function buildGeminiModelParts(
   content: string,
-  thoughtSignature?: string
+  thoughtSignature?: string,
+  reasoningContent?: string,
+  modelParts?: GeminiModelPart[]
 ): GeminiPart[] {
-  return [
-    {
+  const parts: GeminiPart[] = [];
+  const hasSignature = Boolean(
+    (thoughtSignature && thoughtSignature.trim().length > 0) ||
+      modelParts?.some((p) => p.thoughtSignature && p.thoughtSignature.trim().length > 0)
+  );
+
+  // Fallback when thoughtSignature is absent (e.g. Gemma models):
+  // include the thought summary in contents so reasoning context is preserved.
+  if (!hasSignature && reasoningContent && reasoningContent.trim().length > 0) {
+    parts.push({
+      text: reasoningContent,
+      thought: true,
+    });
+  }
+
+  const hasStructuredModelParts = Boolean(
+    modelParts &&
+      modelParts.length > 0 &&
+      (modelParts.length > 1 ||
+        modelParts.some(
+          (p) =>
+            Boolean(p.executableCode) ||
+            Boolean(p.codeExecutionResult) ||
+            Boolean(p.functionCall) ||
+            Boolean(p.inlineData)
+        ))
+  );
+
+  if (hasStructuredModelParts && modelParts) {
+    const cloned = modelParts.map((p) => ({ ...p }));
+    const anyPartHasSig = cloned.some(
+      (p) => p.thoughtSignature && p.thoughtSignature.trim().length > 0
+    );
+    if (!anyPartHasSig && thoughtSignature && cloned.length > 0) {
+      cloned[cloned.length - 1] = {
+        ...cloned[cloned.length - 1],
+        thoughtSignature,
+      };
+    }
+    parts.push(...cloned);
+    return parts;
+  }
+
+  if ((content && content.trim().length > 0) || thoughtSignature || parts.length === 0) {
+    parts.push({
       text: content || '',
       ...(thoughtSignature ? { thoughtSignature } : {}),
-    },
-  ];
+    });
+  }
+
+  return parts;
 }
 
 export function buildOpenAIMessageContent(
@@ -397,7 +442,9 @@ export class GeminiEngine implements AIEngine {
         (h) =>
           h.role !== 'system' &&
           ((h.content && h.content.trim().length > 0) ||
+            (h.reasoningContent && h.reasoningContent.trim().length > 0) ||
             Boolean(h.thoughtSignature) ||
+            (h.modelParts && h.modelParts.length > 0) ||
             (h.attachments && h.attachments.length > 0))
       )
       .map((h) => ({
@@ -405,7 +452,12 @@ export class GeminiEngine implements AIEngine {
         parts:
           h.role === 'user'
             ? buildGeminiParts(h.content, h.attachments)
-            : buildGeminiModelParts(h.content, h.thoughtSignature),
+            : buildGeminiModelParts(
+                h.content,
+                h.thoughtSignature,
+                h.reasoningContent,
+                h.modelParts
+              ),
       }));
 
     const body = {
@@ -447,6 +499,7 @@ export class GeminiEngine implements AIEngine {
       let accumulatedContent = '';
       let accumulatedReasoning = '';
       let accumulatedThoughtSignature = '';
+      const accumulatedModelParts: GeminiModelPart[] = [];
       let thinkingStartTime: number | null = null;
       let thinkingDuration = 0;
       let tokenUsage: TokenUsage | undefined;
@@ -500,26 +553,114 @@ export class GeminiEngine implements AIEngine {
           for (const part of parts) {
             if (!part) continue;
 
-            if (typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0) {
-              accumulatedThoughtSignature = part.thoughtSignature;
+            const partSig =
+              typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0
+                ? part.thoughtSignature
+                : undefined;
+            if (partSig) {
+              accumulatedThoughtSignature = partSig;
             }
 
             if (part.executableCode && typeof part.executableCode.code === 'string') {
-              const lang = String(part.executableCode.language || 'python').toLowerCase();
+              const rawLang = String(part.executableCode.language || 'PYTHON');
+              const lang =
+                rawLang.toUpperCase() === 'LANGUAGE_UNSPECIFIED'
+                  ? 'python'
+                  : rawLang.toLowerCase();
               const snippet = `\n\`\`\`${lang}\n${part.executableCode.code.trim()}\n\`\`\`\n`;
               accumulatedContent += snippet;
               callbacks.onToken?.(snippet, accumulatedContent);
+              accumulatedModelParts.push({
+                executableCode: {
+                  language: rawLang,
+                  code: part.executableCode.code,
+                },
+                ...(partSig ? { thoughtSignature: partSig } : {}),
+              });
               continue;
             }
 
-            if (part.codeExecutionResult && typeof part.codeExecutionResult.output === 'string') {
-              const out = `\n**Execution Output:**\n\`\`\`text\n${part.codeExecutionResult.output.trim()}\n\`\`\`\n`;
-              accumulatedContent += out;
-              callbacks.onToken?.(out, accumulatedContent);
+            if (part.codeExecutionResult && typeof part.codeExecutionResult === 'object') {
+              const outcome = String(part.codeExecutionResult.outcome || 'OUTCOME_OK');
+              const output =
+                typeof part.codeExecutionResult.output === 'string'
+                  ? part.codeExecutionResult.output
+                  : '';
+              const trimmedOut = output.trim();
+              if (trimmedOut.length > 0) {
+                const header =
+                  outcome && outcome !== 'OUTCOME_OK'
+                    ? `**Execution Output (${outcome}):**`
+                    : '**Execution Output:**';
+                const out = `\n${header}\n\`\`\`text\n${trimmedOut}\n\`\`\`\n`;
+                accumulatedContent += out;
+                callbacks.onToken?.(out, accumulatedContent);
+              } else if (outcome && outcome !== 'OUTCOME_OK') {
+                const out = `\n**Execution Outcome:** \`${outcome}\`\n`;
+                accumulatedContent += out;
+                callbacks.onToken?.(out, accumulatedContent);
+              }
+              accumulatedModelParts.push({
+                codeExecutionResult: {
+                  outcome,
+                  ...(typeof part.codeExecutionResult.output === 'string'
+                    ? { output: part.codeExecutionResult.output }
+                    : {}),
+                },
+                ...(partSig ? { thoughtSignature: partSig } : {}),
+              });
+              continue;
+            }
+
+            if (part.functionCall && typeof part.functionCall.name === 'string') {
+              const fnName = part.functionCall.name;
+              const fnArgs =
+                part.functionCall.args && typeof part.functionCall.args === 'object'
+                  ? (part.functionCall.args as Record<string, unknown>)
+                  : undefined;
+              const callSnippet = `\n**Tool Call (\`${fnName}\`):**\n\`\`\`json\n${JSON.stringify(
+                fnArgs ?? {},
+                null,
+                2
+              )}\n\`\`\`\n`;
+              accumulatedContent += callSnippet;
+              callbacks.onToken?.(callSnippet, accumulatedContent);
+              accumulatedModelParts.push({
+                functionCall: {
+                  name: fnName,
+                  ...(fnArgs ? { args: fnArgs } : {}),
+                },
+                ...(partSig ? { thoughtSignature: partSig } : {}),
+              });
+              continue;
+            }
+
+            if (
+              part.inlineData &&
+              typeof part.inlineData.mimeType === 'string' &&
+              typeof part.inlineData.data === 'string'
+            ) {
+              const { mimeType, data: b64 } = part.inlineData;
+              if (mimeType.startsWith('image/')) {
+                const imgMarkdown = `\n![Generated Output](data:${mimeType};base64,${b64})\n`;
+                accumulatedContent += imgMarkdown;
+                callbacks.onToken?.(imgMarkdown, accumulatedContent);
+              }
+              accumulatedModelParts.push({
+                inlineData: { mimeType, data: b64 },
+                ...(partSig ? { thoughtSignature: partSig } : {}),
+              });
               continue;
             }
 
             if (typeof part.text !== 'string' || part.text.length === 0) {
+              if (partSig && accumulatedModelParts.length > 0) {
+                const lastIdx = accumulatedModelParts.length - 1;
+                accumulatedModelParts[lastIdx] = {
+                  ...accumulatedModelParts[lastIdx],
+                  thoughtSignature: partSig,
+                };
+              }
               continue;
             }
 
@@ -534,6 +675,26 @@ export class GeminiEngine implements AIEngine {
             } else {
               accumulatedContent += part.text;
               callbacks.onToken?.(part.text, accumulatedContent);
+              const lastPart = accumulatedModelParts[accumulatedModelParts.length - 1];
+              if (
+                lastPart &&
+                typeof lastPart.text === 'string' &&
+                !lastPart.executableCode &&
+                !lastPart.codeExecutionResult &&
+                !lastPart.functionCall &&
+                !lastPart.inlineData &&
+                !lastPart.thoughtSignature
+              ) {
+                lastPart.text += part.text;
+                if (partSig) {
+                  lastPart.thoughtSignature = partSig;
+                }
+              } else {
+                accumulatedModelParts.push({
+                  text: part.text,
+                  ...(partSig ? { thoughtSignature: partSig } : {}),
+                });
+              }
             }
           }
         } catch {
@@ -551,6 +712,16 @@ export class GeminiEngine implements AIEngine {
         callbacks.onToken?.(sourcesBlock, accumulatedContent);
       }
 
+      const hasStructuredModelParts =
+        accumulatedModelParts.length > 1 ||
+        accumulatedModelParts.some(
+          (p) =>
+            Boolean(p.executableCode) ||
+            Boolean(p.codeExecutionResult) ||
+            Boolean(p.functionCall) ||
+            Boolean(p.inlineData)
+        );
+
       const result: StreamResult = {
         content: accumulatedContent,
         ...(accumulatedReasoning
@@ -562,6 +733,11 @@ export class GeminiEngine implements AIEngine {
         ...(accumulatedThoughtSignature
           ? {
               thoughtSignature: accumulatedThoughtSignature,
+            }
+          : {}),
+        ...(hasStructuredModelParts
+          ? {
+              modelParts: accumulatedModelParts,
             }
           : {}),
         ...(tokenUsage ? { tokenUsage } : {}),

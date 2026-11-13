@@ -1,4 +1,4 @@
-import { Attachment, TokenUsage } from '../types/chat';
+import { Attachment, GeminiModelPart, TokenUsage } from '../types/chat';
 import {
   EngineMode,
   GeminiToolsConfig,
@@ -11,7 +11,9 @@ export interface StreamRequest {
   history?: {
     role: 'user' | 'assistant' | 'system';
     content: string;
+    reasoningContent?: string;
     thoughtSignature?: string;
+    modelParts?: GeminiModelPart[];
     attachments?: Attachment[];
   }[];
   systemPrompt?: string;
@@ -32,6 +34,7 @@ export interface StreamResult {
   content: string;
   reasoningContent?: string;
   thoughtSignature?: string;
+  modelParts?: GeminiModelPart[];
   thinkingDuration?: number;
   tokenUsage?: TokenUsage;
 }

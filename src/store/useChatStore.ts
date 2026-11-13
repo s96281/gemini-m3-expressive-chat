@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { Attachment, ChatSession, MessageNode, Role, TokenUsage } from '../types/chat';
+import {
+  Attachment,
+  ChatSession,
+  GeminiModelPart,
+  MessageNode,
+  Role,
+  TokenUsage,
+} from '../types/chat';
 import {
   loadSessionsFromStorage,
   saveSessionsToStorage,
@@ -29,6 +36,7 @@ export interface AddMessagePayload {
   model?: string;
   reasoningContent?: string;
   thoughtSignature?: string;
+  modelParts?: GeminiModelPart[];
   thinkingDuration?: number;
   isContextSummary?: boolean;
 }
@@ -73,7 +81,8 @@ export interface ChatState {
     reasoning?: string,
     duration?: number,
     tokenUsage?: TokenUsage,
-    thoughtSignature?: string
+    thoughtSignature?: string,
+    modelParts?: GeminiModelPart[]
   ) => void;
   setMessageError: (sessionId: string, messageId: string, error: string) => void;
   setMessageRating: (
@@ -210,7 +219,8 @@ export const useChatStore = create<ChatState>((set, get) => {
               result.reasoningContent,
               result.thinkingDuration,
               result.tokenUsage,
-              result.thoughtSignature
+              result.thoughtSignature,
+              result.modelParts
             );
 
             const embeddingModel = settings.titleEmbeddingModel || 'gemini-embedding-2';
@@ -461,6 +471,9 @@ export const useChatStore = create<ChatState>((set, get) => {
             ...(payload.thoughtSignature !== undefined
               ? { thoughtSignature: payload.thoughtSignature }
               : {}),
+            ...(payload.modelParts !== undefined
+              ? { modelParts: payload.modelParts }
+              : {}),
             thinkingDuration: payload.thinkingDuration,
             ...(payload.isContextSummary !== undefined
               ? { isContextSummary: payload.isContextSummary }
@@ -617,7 +630,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       reasoning?: string,
       duration?: number,
       tokenUsage?: TokenUsage,
-      thoughtSignature?: string
+      thoughtSignature?: string,
+      modelParts?: GeminiModelPart[]
     ) => {
       set((state) => {
         const nextSessions = state.sessions.map((session) => {
@@ -633,6 +647,11 @@ export const useChatStore = create<ChatState>((set, get) => {
               ? { thoughtSignature }
               : existingNode.thoughtSignature !== undefined
                 ? { thoughtSignature: existingNode.thoughtSignature }
+                : {}),
+            ...(modelParts !== undefined
+              ? { modelParts }
+              : existingNode.modelParts !== undefined
+                ? { modelParts: existingNode.modelParts }
                 : {}),
             thinkingDuration:
               duration !== undefined ? duration : existingNode.thinkingDuration,

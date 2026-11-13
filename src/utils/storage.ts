@@ -29,6 +29,9 @@ export function normalizeSession(raw: Partial<ChatSession>): ChatSession {
           content: m.content || '',
           reasoningContent: m.reasoningContent,
           ...(m.thoughtSignature !== undefined ? { thoughtSignature: m.thoughtSignature } : {}),
+          ...(Array.isArray(m.modelParts) && m.modelParts.length > 0
+            ? { modelParts: m.modelParts }
+            : {}),
           thinkingDuration: m.thinkingDuration,
           isStreaming: Boolean(m.isStreaming),
           ...(m.error !== undefined ? { error: m.error } : {}),
@@ -51,6 +54,9 @@ export function normalizeSession(raw: Partial<ChatSession>): ChatSession {
           content: m.content || '',
           reasoningContent: m.reasoningContent,
           ...(m.thoughtSignature !== undefined ? { thoughtSignature: m.thoughtSignature } : {}),
+          ...(Array.isArray(m.modelParts) && m.modelParts.length > 0
+            ? { modelParts: m.modelParts }
+            : {}),
           thinkingDuration: m.thinkingDuration,
           isStreaming: Boolean(m.isStreaming),
           ...(m.error !== undefined ? { error: m.error } : {}),

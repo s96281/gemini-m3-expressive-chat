@@ -208,7 +208,29 @@ const MARKDOWN_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['component
   hr() {
     return <hr className="my-4 border-outline-variant/30" />;
   },
+  img({ src, alt, ...props }) {
+    return (
+      <img
+        src={src}
+        alt={alt || 'Generated image'}
+        className="max-w-full h-auto rounded-2xl border border-outline-variant/30 my-2 shadow-sm"
+        loading="lazy"
+        {...props}
+      />
+    );
+  },
 };
+
+function allowDataImageUrlTransform(url: string): string {
+  const trimmed = (url || '').trim();
+  if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^(https?:|mailto:|tel:|\/|#)/i.test(trimmed)) {
+    return trimmed;
+  }
+  return '';
+}
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(
   ({ content, isStreaming = false }) => {
@@ -220,6 +242,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(
               remarkPlugins={REMARK_PLUGINS}
               rehypePlugins={REHYPE_PLUGINS}
               components={MARKDOWN_COMPONENTS}
+              urlTransform={allowDataImageUrlTransform}
             >
               {content}
             </ReactMarkdown>
